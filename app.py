@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, jsonify
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +24,9 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret")
 
 # Store downloaded files with unique IDs (for Render deployment)
 DOWNLOADED_FILES: dict[str, dict] = {}
+
+# Store recent file IDs for notification system (last 10 files)
+RECENT_FILE_IDS: list[dict] = []
 
 # Check and install Playwright browsers if needed (for Render)
 def ensure_playwright_browsers():
@@ -577,6 +580,17 @@ async def open_and_login_with_playwright(
                                     if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
                                         del DOWNLOADED_FILES[k]
                                 logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                                
+                                # Add to recent files for notification
+                                RECENT_FILE_IDS.insert(0, {
+                                    "file_id": file_id,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                })
+                                # Keep only last 10 files
+                                if len(RECENT_FILE_IDS) > 10:
+                                    RECENT_FILE_IDS.pop()
+                                
                                 # Store file_id for later retrieval
                                 if not hasattr(open_and_login_with_playwright, '_last_file_id'):
                                     open_and_login_with_playwright._last_file_id = None
@@ -1184,6 +1198,22 @@ async def process_multiple_reports(
 @app.get("/")
 def index():
     return render_template("index.html", status=None)
+
+@app.get("/api/recent-files")
+def get_recent_files():
+    """Get recent file downloads for notification system"""
+    # Return files from last 5 minutes
+    current_time = time.time()
+    recent = [
+        {
+            "file_id": f["file_id"],
+            "filename": f["filename"],
+            "time_ago": int(current_time - f["created"])
+        }
+        for f in RECENT_FILE_IDS
+        if current_time - f["created"] < 300  # Last 5 minutes
+    ]
+    return jsonify({"files": recent})
 
 
 @app.get("/download-sample-csv")

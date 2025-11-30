@@ -31,6 +31,159 @@
             font-family: "Segoe UI", Arial, sans-serif;
             color: var(--text-base);
             background: var(--page-bg);
+            position: relative;
+        }
+
+        /* Notification Icon */
+        .notification-icon {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            z-index: 1000;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .notification-icon:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+        }
+
+        .notification-icon.has-notifications {
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .notification-icon.has-notifications::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+
+        .notification-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            }
+            50% {
+                box-shadow: 0 4px 20px rgba(16, 185, 129, 0.6);
+            }
+        }
+
+        /* Notification Dropdown */
+        .notification-dropdown {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            display: none;
+            z-index: 999;
+            border: 1px solid var(--border-color);
+        }
+
+        .notification-dropdown.show {
+            display: block;
+            animation: fadeSlide 300ms ease-out;
+        }
+
+        .notification-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            color: var(--text-strong);
+        }
+
+        .notification-item {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .notification-item:hover {
+            background: #f8fafc;
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-item-icon {
+            width: 40px;
+            height: 40px;
+            background: #ecfdf5;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .notification-item-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: #10b981;
+        }
+
+        .notification-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .notification-item-title {
+            font-weight: 600;
+            color: var(--text-strong);
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .notification-item-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .notification-item-fileid {
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: var(--primary);
+            margin-top: 2px;
+        }
+
+        .notification-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
         }
 
         .page {
@@ -328,6 +481,21 @@
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
 </head>
 <body>
+    <!-- Notification Icon -->
+    <div class="notification-icon" id="notificationIcon" onclick="toggleNotifications()">
+        <svg viewBox="0 0 24 24">
+            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+        </svg>
+    </div>
+
+    <!-- Notification Dropdown -->
+    <div class="notification-dropdown" id="notificationDropdown">
+        <div class="notification-header">Downloaded Files</div>
+        <div id="notificationList">
+            <div class="notification-empty">No files available yet</div>
+        </div>
+    </div>
+
     <div class="page">
         <header class="page__header">
             <h1>Report Generator</h1>
