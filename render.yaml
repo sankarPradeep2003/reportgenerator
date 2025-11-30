@@ -2,7 +2,7 @@ services:
   - type: web
     name: reportgenerator
     env: python
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps chromium
+    buildCommand: pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps chromium || (echo "Build command failed, trying alternative..." && pip install -r requirements.txt && python -m playwright install --with-deps chromium)
     startCommand: gunicorn app:app
     envVars:
       - key: PLAYWRIGHT_HEADLESS

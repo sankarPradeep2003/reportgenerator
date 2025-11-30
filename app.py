@@ -25,6 +25,37 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret")
 # Store downloaded files with unique IDs (for Render deployment)
 DOWNLOADED_FILES: dict[str, dict] = {}
 
+# Check Playwright browsers on startup (for Render)
+def check_playwright_browsers():
+    """Check if Playwright browsers are installed"""
+    if os.environ.get("RENDER"):
+        try:
+            from playwright.sync_api import sync_playwright
+            p = sync_playwright().start()
+            try:
+                # Try to get browser path
+                browser_path = p.chromium.executable_path
+                if browser_path and Path(browser_path).exists():
+                    logger.info(f"Playwright browsers found at: {browser_path}")
+                    return True
+                else:
+                    logger.warning(f"Playwright browser path not found: {browser_path}")
+                    return False
+            except Exception as e:
+                logger.error(f"Error checking Playwright browsers: {e}")
+                return False
+            finally:
+                p.stop()
+        except Exception as e:
+            logger.error(f"Playwright not available: {e}")
+            return False
+    return True
+
+# Check on startup
+if os.environ.get("RENDER"):
+    logger.info("Checking Playwright browser installation...")
+    check_playwright_browsers()
+
 
 def get_downloads_dir() -> Path:
     """Get the user's Downloads directory in a cross-platform way."""
