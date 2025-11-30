@@ -107,11 +107,17 @@ async def open_and_login_with_playwright(
         async with async_playwright() as p:
             # Prefer the user's installed Google Chrome; fallback to bundled Chromium
             browser = None
+            # Use headless mode on Render (no display available)
+            headless_mode = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
             try:
-                browser = await p.chromium.launch(channel="chrome", headless=False)
+                browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
             except Exception:
-                browser = await p.chromium.launch(headless=False)
-            download_dir = get_downloads_dir()
+                browser = await p.chromium.launch(headless=headless_mode)
+            # On Render, use /tmp for downloads instead of user Downloads folder
+            if os.environ.get("RENDER"):
+                download_dir = Path("/tmp/downloads")
+            else:
+                download_dir = get_downloads_dir()
             try:
                 download_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
@@ -865,12 +871,18 @@ async def process_multiple_reports(
     try:
         async with async_playwright() as p:
             browser = None
+            # Use headless mode on Render (no display available)
+            headless_mode = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
             try:
-                browser = await p.chromium.launch(channel="chrome", headless=False)
+                browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
             except Exception:
-                browser = await p.chromium.launch(headless=False)
+                browser = await p.chromium.launch(headless=headless_mode)
             
-            download_dir = get_downloads_dir()
+            # On Render, use /tmp for downloads instead of user Downloads folder
+            if os.environ.get("RENDER"):
+                download_dir = Path("/tmp/downloads")
+            else:
+                download_dir = get_downloads_dir()
             try:
                 download_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
@@ -1160,6 +1172,9 @@ def open_url():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    debug = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
+    app.run(host=host, port=port, debug=debug)
 
 
