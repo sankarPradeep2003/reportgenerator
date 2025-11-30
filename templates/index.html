@@ -476,6 +476,15 @@
             modeBatch.addEventListener('change', toggleMode);
             toggleMode(); // Initialize on page load
 
+            // Add event listener to notification icon
+            const notificationIcon = document.getElementById('notificationIcon');
+            if (notificationIcon) {
+                notificationIcon.addEventListener('click', function(event) {
+                    event.stopPropagation();
+                    toggleNotifications();
+                });
+            }
+
             // Start checking for new files
             checkForNewFiles();
             setInterval(checkForNewFiles, 30000); // Check every 30 seconds
@@ -522,7 +531,7 @@
             }
             
             notificationList.innerHTML = files.map(file => `
-                <div class="notification-item" onclick="downloadFile('${file.file_id}')" style="cursor: pointer;">
+                <div class="notification-item" data-file-id="${file.file_id}" style="cursor: pointer;">
                     <div class="notification-item-icon">
                         <svg viewBox="0 0 24 24">
                             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
@@ -535,6 +544,14 @@
                     </div>
                 </div>
             `).join('');
+            
+            // Add event listeners to notification items
+            notificationList.querySelectorAll('.notification-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const fileId = this.getAttribute('data-file-id');
+                    downloadFile(fileId);
+                });
+            });
         }
 
         function escapeHtml(text) {
@@ -568,12 +585,12 @@
             }
         });
     </script>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
 </head>
 <body>
     <!-- Notification Icon -->
-    <div class="notification-icon" id="notificationIcon" onclick="toggleNotifications()">
+    <div class="notification-icon" id="notificationIcon">
         <svg viewBox="0 0 24 24">
             <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
         </svg>
