@@ -101,12 +101,12 @@
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-xl);
             display: none;
-            z-index: 999;
+            z-index: 10000;
             border: 1px solid var(--border-color);
         }
 
         .notification-dropdown.show {
-            display: block;
+            display: block !important;
             animation: fadeSlide 300ms ease-out;
         }
 
@@ -478,7 +478,7 @@
 
             // Start checking for new files
             checkForNewFiles();
-            setInterval(checkForNewFiles, 5000); // Check every 5 seconds
+            setInterval(checkForNewFiles, 30000); // Check every 30 seconds
         });
 
         let seenFileIds = new Set();
@@ -522,7 +522,7 @@
             }
             
             notificationList.innerHTML = files.map(file => `
-                <div class="notification-item" onclick="downloadFile('${file.file_id}')">
+                <div class="notification-item" onclick="downloadFile('${file.file_id}')" style="cursor: pointer;">
                     <div class="notification-item-icon">
                         <svg viewBox="0 0 24 24">
                             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
@@ -545,6 +545,13 @@
 
         function toggleNotifications() {
             const dropdown = document.getElementById('notificationDropdown');
+            const isShowing = dropdown.classList.contains('show');
+            
+            if (!isShowing) {
+                // Refresh the file list when opening
+                checkForNewFiles();
+            }
+            
             dropdown.classList.toggle('show');
         }
 
