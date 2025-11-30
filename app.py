@@ -25,7 +25,7 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret")
 # Store downloaded files with unique IDs (for Render deployment)
 DOWNLOADED_FILES: dict[str, dict] = {}
 
-# Store recent file IDs for notification system (last 10 files)
+# Store recent file IDs for notification system (last 50 files to support batch processing)
 RECENT_FILE_IDS: list[dict] = []
 
 # Check and install Playwright browsers if needed (for Render)
@@ -587,8 +587,8 @@ async def open_and_login_with_playwright(
                                     "filename": target_path.name,
                                     "created": time.time()
                                 })
-                                # Keep only last 10 files
-                                if len(RECENT_FILE_IDS) > 10:
+                                # Keep only last 50 files (to support batch processing)
+                                if len(RECENT_FILE_IDS) > 50:
                                     RECENT_FILE_IDS.pop()
                                 logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
                                 
@@ -954,8 +954,8 @@ async def process_single_course_in_session(
                             "filename": target_path.name,
                             "created": time.time()
                         })
-                        # Keep only last 10 files
-                        if len(RECENT_FILE_IDS) > 10:
+                        # Keep only last 50 files (to support batch processing)
+                        if len(RECENT_FILE_IDS) > 50:
                             RECENT_FILE_IDS.pop()
                         logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
                     
@@ -1231,18 +1231,41 @@ def index():
 @app.get("/api/recent-files")
 def get_recent_files():
     """Get recent file downloads for notification system"""
-    # Return files from last 5 minutes
+    # Return all files (no time filter - files are already limited to last 50)
     current_time = time.time()
-    recent = [
-        {
-            "file_id": f["file_id"],
-            "filename": f["filename"],
-            "time_ago": int(current_time - f["created"])
-        }
-        for f in RECENT_FILE_IDS
-        if current_time - f["created"] < 300  # Last 5 minutes
-    ]
-    logger.info(f"API called: Returning {len(recent)} files from {len(RECENT_FILE_IDS)} total recent files")
+    recent = []
+    
+    logger.info(f"API called: RECENT_FILE_IDS has {len(RECENT_FILE_IDS)} files, DOWNLOADED_FILES has {len(DOWNLOADED_FILES)} files")
+    
+    # Process all files in RECENT_FILE_IDS
+    for idx, f in enumerate(RECENT_FILE_IDS):
+        try:
+            # Validate file structure
+            if not isinstance(f, dict):
+                logger.error(f"File at index {idx} is not a dict: {type(f)}")
+                continue
+                
+            file_id = f.get("file_id")
+            filename = f.get("filename", "unknown")
+            created = f.get("created", 0)
+            
+            if not file_id:
+                logger.error(f"File at index {idx} missing file_id: {f}")
+                continue
+            
+            time_diff = current_time - created
+            recent.append({
+                "file_id": file_id,
+                "filename": filename,
+                "time_ago": int(time_diff)
+            })
+            age_minutes = int(time_diff) // 60
+            logger.info(f"Added file {idx+1}: {filename} (ID: {file_id[:8]}...) - {age_minutes} minutes old")
+        except Exception as e:
+            logger.error(f"Error processing file at index {idx} in RECENT_FILE_IDS: {e}, file data: {f}", exc_info=True)
+    
+    logger.info(f"API response: Returning {len(recent)} files from {len(RECENT_FILE_IDS)} total recent files")
+    
     return jsonify({"files": recent})
 
 
