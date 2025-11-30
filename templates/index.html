@@ -475,6 +475,90 @@
             modeSingle.addEventListener('change', toggleMode);
             modeBatch.addEventListener('change', toggleMode);
             toggleMode(); // Initialize on page load
+
+            // Start checking for new files
+            checkForNewFiles();
+            setInterval(checkForNewFiles, 5000); // Check every 5 seconds
+        });
+
+        let seenFileIds = new Set();
+
+        function checkForNewFiles() {
+            fetch('/api/recent-files')
+                .then(response => response.json())
+                .then(data => {
+                    const files = data.files || [];
+                    const notificationIcon = document.getElementById('notificationIcon');
+                    const notificationList = document.getElementById('notificationList');
+                    
+                    if (files.length > 0) {
+                        notificationIcon.classList.add('has-notifications');
+                        
+                        // Filter out already seen files
+                        const newFiles = files.filter(f => !seenFileIds.has(f.file_id));
+                        newFiles.forEach(f => seenFileIds.add(f.file_id));
+                        
+                        if (newFiles.length > 0 || files.length > 0) {
+                            updateNotificationList(files);
+                        }
+                    } else {
+                        notificationIcon.classList.remove('has-notifications');
+                        if (seenFileIds.size === 0) {
+                            notificationList.innerHTML = '<div class="notification-empty">No files available yet</div>';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking for files:', error);
+                });
+        }
+
+        function updateNotificationList(files) {
+            const notificationList = document.getElementById('notificationList');
+            
+            if (files.length === 0) {
+                notificationList.innerHTML = '<div class="notification-empty">No files available yet</div>';
+                return;
+            }
+            
+            notificationList.innerHTML = files.map(file => `
+                <div class="notification-item" onclick="downloadFile('${file.file_id}')">
+                    <div class="notification-item-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                        </svg>
+                    </div>
+                    <div class="notification-item-content">
+                        <div class="notification-item-title">${escapeHtml(file.filename)}</div>
+                        <div class="notification-item-meta">Ready to download</div>
+                        <div class="notification-item-fileid">ID: ${file.file_id}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notificationDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        function downloadFile(fileId) {
+            window.location.href = `/download/${fileId}`;
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const icon = document.getElementById('notificationIcon');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (!icon.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
         });
     </script>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">

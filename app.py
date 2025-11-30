@@ -590,6 +590,7 @@ async def open_and_login_with_playwright(
                                 # Keep only last 10 files
                                 if len(RECENT_FILE_IDS) > 10:
                                     RECENT_FILE_IDS.pop()
+                                logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
                                 
                                 # Store file_id for later retrieval
                                 if not hasattr(open_and_login_with_playwright, '_last_file_id'):
@@ -930,6 +931,34 @@ async def process_single_course_in_session(
                         target_path = download_dir / suggested_name
                     await download.save_as(str(target_path))
                     
+                    # On Render, store file info for download (same as in open_and_login_with_playwright)
+                    if os.environ.get("RENDER") and target_path.exists():
+                        file_id = secrets.token_urlsafe(16)
+                        with open(target_path, "rb") as f:
+                            file_data = f.read()
+                        DOWNLOADED_FILES[file_id] = {
+                            "data": file_data,
+                            "filename": target_path.name,
+                            "created": time.time()
+                        }
+                        # Clean up old files (older than 1 hour)
+                        current_time = time.time()
+                        for k in list(DOWNLOADED_FILES.keys()):
+                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                del DOWNLOADED_FILES[k]
+                        logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                        
+                        # Add to recent files for notification
+                        RECENT_FILE_IDS.insert(0, {
+                            "file_id": file_id,
+                            "filename": target_path.name,
+                            "created": time.time()
+                        })
+                        # Keep only last 10 files
+                        if len(RECENT_FILE_IDS) > 10:
+                            RECENT_FILE_IDS.pop()
+                        logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
+                    
                     # Close dialogs after download - EXACT same code
                     await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
                     
@@ -1213,6 +1242,7 @@ def get_recent_files():
         for f in RECENT_FILE_IDS
         if current_time - f["created"] < 300  # Last 5 minutes
     ]
+    logger.info(f"API called: Returning {len(recent)} files from {len(RECENT_FILE_IDS)} total recent files")
     return jsonify({"files": recent})
 
 
