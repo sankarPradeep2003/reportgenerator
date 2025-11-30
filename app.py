@@ -25,9 +25,9 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret")
 # Store downloaded files with unique IDs (for Render deployment)
 DOWNLOADED_FILES: dict[str, dict] = {}
 
-# Check Playwright browsers on startup (for Render)
-def check_playwright_browsers():
-    """Check if Playwright browsers are installed"""
+# Check and install Playwright browsers if needed (for Render)
+def ensure_playwright_browsers():
+    """Check if Playwright browsers are installed, install if missing"""
     if os.environ.get("RENDER"):
         try:
             from playwright.sync_api import sync_playwright
@@ -40,9 +40,51 @@ def check_playwright_browsers():
                     return True
                 else:
                     logger.warning(f"Playwright browser path not found: {browser_path}")
-                    return False
+                    # Try to install browsers
+                    logger.info("Attempting to install Playwright browsers...")
+                    import subprocess
+                    result = subprocess.run(
+                        ["python", "-m", "playwright", "install", "chromium"],
+                        capture_output=True,
+                        text=True,
+                        timeout=600
+                    )
+                    if result.returncode == 0:
+                        logger.info("Playwright browsers installed successfully")
+                        # Also install deps
+                        subprocess.run(
+                            ["python", "-m", "playwright", "install-deps", "chromium"],
+                            capture_output=True,
+                            text=True,
+                            timeout=300
+                        )
+                        return True
+                    else:
+                        logger.error(f"Failed to install browsers: {result.stderr}")
+                        return False
             except Exception as e:
                 logger.error(f"Error checking Playwright browsers: {e}")
+                # Try to install browsers as fallback
+                try:
+                    logger.info("Attempting to install Playwright browsers...")
+                    import subprocess
+                    result = subprocess.run(
+                        ["python", "-m", "playwright", "install", "chromium"],
+                        capture_output=True,
+                        text=True,
+                        timeout=600
+                    )
+                    if result.returncode == 0:
+                        logger.info("Playwright browsers installed successfully")
+                        subprocess.run(
+                            ["python", "-m", "playwright", "install-deps", "chromium"],
+                            capture_output=True,
+                            text=True,
+                            timeout=300
+                        )
+                        return True
+                except Exception as install_error:
+                    logger.error(f"Failed to install browsers: {install_error}")
                 return False
             finally:
                 p.stop()
@@ -51,10 +93,13 @@ def check_playwright_browsers():
             return False
     return True
 
-# Check on startup
+# Check on startup (but don't block if it fails)
 if os.environ.get("RENDER"):
     logger.info("Checking Playwright browser installation...")
-    check_playwright_browsers()
+    try:
+        ensure_playwright_browsers()
+    except Exception as e:
+        logger.warning(f"Could not verify/install browsers on startup: {e}. Will try at runtime.")
 
 
 def get_downloads_dir() -> Path:
@@ -145,6 +190,11 @@ async def open_and_login_with_playwright(
         return False, f"Playwright not installed: {exc}"
 
     try:
+        # On Render, ensure browsers are installed before trying to use them
+        if os.environ.get("RENDER"):
+            logger.info("Ensuring Playwright browsers are installed...")
+            ensure_playwright_browsers()
+        
         async with async_playwright() as p:
             # Prefer the user's installed Google Chrome; fallback to bundled Chromium
             browser = None
@@ -157,16 +207,27 @@ async def open_and_login_with_playwright(
                 browser = await p.chromium.launch(headless=headless_mode)
             except Exception as e1:
                 logger.warning(f"Failed to launch chromium: {e1}")
-                try:
-                    # Try with channel="chrome" if available
-                    browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
-                except Exception as e2:
-                    logger.error(f"Failed to launch chrome channel: {e2}")
-                    # Last resort: try with minimal args for Render
-                    browser = await p.chromium.launch(
-                        headless=headless_mode,
-                        args=['--no-sandbox', '--disable-setuid-sandbox']
-                    )
+                # If on Render and launch failed, try installing browsers again
+                if os.environ.get("RENDER"):
+                    logger.info("Browser launch failed, attempting to install browsers...")
+                    ensure_playwright_browsers()
+                    # Try again after installation
+                    try:
+                        browser = await p.chromium.launch(headless=headless_mode)
+                    except Exception as e1_retry:
+                        logger.error(f"Still failed after installation attempt: {e1_retry}")
+                        raise e1_retry
+                else:
+                    try:
+                        # Try with channel="chrome" if available
+                        browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
+                    except Exception as e2:
+                        logger.error(f"Failed to launch chrome channel: {e2}")
+                        # Last resort: try with minimal args for Render
+                        browser = await p.chromium.launch(
+                            headless=headless_mode,
+                            args=['--no-sandbox', '--disable-setuid-sandbox']
+                        )
             # On Render, use /tmp for downloads instead of user Downloads folder
             if os.environ.get("RENDER"):
                 download_dir = Path("/tmp/downloads")
@@ -959,6 +1020,11 @@ async def process_multiple_reports(
     error_count = 0
     
     try:
+        # On Render, ensure browsers are installed before trying to use them
+        if os.environ.get("RENDER"):
+            logger.info("Ensuring Playwright browsers are installed...")
+            ensure_playwright_browsers()
+        
         async with async_playwright() as p:
             browser = None
             # Use headless mode on Render (no display available)
@@ -970,16 +1036,27 @@ async def process_multiple_reports(
                 browser = await p.chromium.launch(headless=headless_mode)
             except Exception as e1:
                 logger.warning(f"Failed to launch chromium: {e1}")
-                try:
-                    # Try with channel="chrome" if available
-                    browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
-                except Exception as e2:
-                    logger.error(f"Failed to launch chrome channel: {e2}")
-                    # Last resort: try with minimal args for Render
-                    browser = await p.chromium.launch(
-                        headless=headless_mode,
-                        args=['--no-sandbox', '--disable-setuid-sandbox']
-                    )
+                # If on Render and launch failed, try installing browsers again
+                if os.environ.get("RENDER"):
+                    logger.info("Browser launch failed, attempting to install browsers...")
+                    ensure_playwright_browsers()
+                    # Try again after installation
+                    try:
+                        browser = await p.chromium.launch(headless=headless_mode)
+                    except Exception as e1_retry:
+                        logger.error(f"Still failed after installation attempt: {e1_retry}")
+                        raise e1_retry
+                else:
+                    try:
+                        # Try with channel="chrome" if available
+                        browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
+                    except Exception as e2:
+                        logger.error(f"Failed to launch chrome channel: {e2}")
+                        # Last resort: try with minimal args for Render
+                        browser = await p.chromium.launch(
+                            headless=headless_mode,
+                            args=['--no-sandbox', '--disable-setuid-sandbox']
+                        )
             
             # On Render, use /tmp for downloads instead of user Downloads folder
             if os.environ.get("RENDER"):
