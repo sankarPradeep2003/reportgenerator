@@ -28,70 +28,72 @@ DOWNLOADED_FILES: dict[str, dict] = {}
 # Check and install Playwright browsers if needed (for Render)
 def ensure_playwright_browsers():
     """Check if Playwright browsers are installed, install if missing"""
-    if os.environ.get("RENDER"):
-        try:
-            from playwright.sync_api import sync_playwright
-            p = sync_playwright().start()
-            try:
-                # Try to get browser path
-                browser_path = p.chromium.executable_path
-                if browser_path and Path(browser_path).exists():
-                    logger.info(f"Playwright browsers found at: {browser_path}")
-                    return True
-                else:
-                    logger.warning(f"Playwright browser path not found: {browser_path}")
-                    # Try to install browsers
-                    logger.info("Attempting to install Playwright browsers...")
-                    import subprocess
-                    result = subprocess.run(
-                        ["python", "-m", "playwright", "install", "chromium"],
-                        capture_output=True,
-                        text=True,
-                        timeout=600
-                    )
-                    if result.returncode == 0:
-                        logger.info("Playwright browsers installed successfully")
-                        # Also install deps
-                        subprocess.run(
-                            ["python", "-m", "playwright", "install-deps", "chromium"],
-                            capture_output=True,
-                            text=True,
-                            timeout=300
-                        )
-                        return True
-                    else:
-                        logger.error(f"Failed to install browsers: {result.stderr}")
-                        return False
-            except Exception as e:
-                logger.error(f"Error checking Playwright browsers: {e}")
-                # Try to install browsers as fallback
-                try:
-                    logger.info("Attempting to install Playwright browsers...")
-                    import subprocess
-                    result = subprocess.run(
-                        ["python", "-m", "playwright", "install", "chromium"],
-                        capture_output=True,
-                        text=True,
-                        timeout=600
-                    )
-                    if result.returncode == 0:
-                        logger.info("Playwright browsers installed successfully")
-                        subprocess.run(
-                            ["python", "-m", "playwright", "install-deps", "chromium"],
-                            capture_output=True,
-                            text=True,
-                            timeout=300
-                        )
-                        return True
-                except Exception as install_error:
-                    logger.error(f"Failed to install browsers: {install_error}")
-                return False
-            finally:
-                p.stop()
-        except Exception as e:
-            logger.error(f"Playwright not available: {e}")
+    if not os.environ.get("RENDER"):
+        return True
+    
+    try:
+        # Check if browser executable exists by trying to get the path via subprocess
+        # This avoids using sync API in async context
+        import subprocess
+        result = subprocess.run(
+            ["python", "-c", "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print(p.chromium.executable_path); p.stop()"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            browser_path = result.stdout.strip()
+            if browser_path and Path(browser_path).exists():
+                logger.info(f"Playwright browsers found at: {browser_path}")
+                return True
+        
+        # Browsers not found, install them
+        logger.info("Playwright browsers not found. Attempting to install...")
+        install_result = subprocess.run(
+            ["python", "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        
+        if install_result.returncode == 0:
+            logger.info("Playwright browsers installed successfully")
+            # Also install system dependencies
+            deps_result = subprocess.run(
+                ["python", "-m", "playwright", "install-deps", "chromium"],
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            if deps_result.returncode == 0:
+                logger.info("Playwright system dependencies installed")
+            return True
+        else:
+            logger.error(f"Failed to install browsers: {install_result.stderr}")
             return False
-    return True
+            
+    except subprocess.TimeoutExpired:
+        logger.error("Browser installation timed out")
+        return False
+    except Exception as e:
+        logger.error(f"Error ensuring Playwright browsers: {e}")
+        # Try direct installation as fallback
+        try:
+            logger.info("Attempting direct browser installation...")
+            import subprocess
+            result = subprocess.run(
+                ["python", "-m", "playwright", "install", "--with-deps", "chromium"],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
+            if result.returncode == 0:
+                logger.info("Playwright browsers installed via fallback method")
+                return True
+        except Exception as fallback_error:
+            logger.error(f"Fallback installation also failed: {fallback_error}")
+        return False
 
 # Check on startup (but don't block if it fails)
 if os.environ.get("RENDER"):
