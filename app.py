@@ -119,10 +119,23 @@ async def open_and_login_with_playwright(
             browser = None
             # Use headless mode on Render (no display available)
             headless_mode = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
+            
+            # Launch browser with proper configuration for Render
             try:
-                browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
-            except Exception:
+                # Try to launch with system chromium first
                 browser = await p.chromium.launch(headless=headless_mode)
+            except Exception as e1:
+                logger.warning(f"Failed to launch chromium: {e1}")
+                try:
+                    # Try with channel="chrome" if available
+                    browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
+                except Exception as e2:
+                    logger.error(f"Failed to launch chrome channel: {e2}")
+                    # Last resort: try with minimal args for Render
+                    browser = await p.chromium.launch(
+                        headless=headless_mode,
+                        args=['--no-sandbox', '--disable-setuid-sandbox']
+                    )
             # On Render, use /tmp for downloads instead of user Downloads folder
             if os.environ.get("RENDER"):
                 download_dir = Path("/tmp/downloads")
@@ -919,10 +932,23 @@ async def process_multiple_reports(
             browser = None
             # Use headless mode on Render (no display available)
             headless_mode = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
+            
+            # Launch browser with proper configuration for Render
             try:
-                browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
-            except Exception:
+                # Try to launch with system chromium first
                 browser = await p.chromium.launch(headless=headless_mode)
+            except Exception as e1:
+                logger.warning(f"Failed to launch chromium: {e1}")
+                try:
+                    # Try with channel="chrome" if available
+                    browser = await p.chromium.launch(channel="chrome", headless=headless_mode)
+                except Exception as e2:
+                    logger.error(f"Failed to launch chrome channel: {e2}")
+                    # Last resort: try with minimal args for Render
+                    browser = await p.chromium.launch(
+                        headless=headless_mode,
+                        args=['--no-sandbox', '--disable-setuid-sandbox']
+                    )
             
             # On Render, use /tmp for downloads instead of user Downloads folder
             if os.environ.get("RENDER"):

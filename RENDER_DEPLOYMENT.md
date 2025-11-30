@@ -28,7 +28,12 @@ Fill in the following settings:
 - **Runtime**: `Python 3`
 - **Build Command**: 
   ```
-  pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium
+  pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps chromium
+  ```
+  
+  **OR** use the build script:
+  ```
+  chmod +x build.sh && ./build.sh
   ```
 - **Start Command**: 
   ```
