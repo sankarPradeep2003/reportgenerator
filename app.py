@@ -25,7 +25,7 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret")
 # Store downloaded files with unique IDs (for Render deployment)
 DOWNLOADED_FILES: dict[str, dict] = {}
 
-# Store recent file IDs for notification system (last 50 files to support batch processing)
+# Store recent file IDs for notification system (last 10 files)
 RECENT_FILE_IDS: list[dict] = []
 
 # Check and install Playwright browsers if needed (for Render)
@@ -564,63 +564,38 @@ async def open_and_login_with_playwright(
                                 target_path = download_dir / suggested_name
                             await download.save_as(str(target_path))
                             
-                            # Wait a bit for file to be fully written and retry if needed
-                            file_exists = False
-                            for retry in range(5):
-                                await page.wait_for_timeout(500)
-                                if target_path.exists() and target_path.stat().st_size > 0:
-                                    file_exists = True
-                                    break
-                                logger.debug(f"Waiting for file {target_path.name} to exist (retry {retry+1}/5)")
-                            
                             # On Render, store file info for download
-                            # Check if we're on Render (either by env var or by checking if we're using /tmp/downloads)
-                            is_render = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
-                            file_size = target_path.stat().st_size if target_path.exists() else 0
-                            logger.info(f"Download completed: path={target_path}, exists={file_exists}, size={file_size}, RENDER={is_render}, download_dir={download_dir}")
-                            
-                            # Always try to add file if it exists (for Render deployment)
-                            if file_exists and file_size > 0:
-                                try:
-                                    logger.info(f"📦 Storing file in memory: {target_path.name} ({file_size} bytes)")
-                                    file_id = secrets.token_urlsafe(16)
-                                    with open(target_path, "rb") as f:
-                                        file_data = f.read()
-                                    
-                                    if len(file_data) > 0:
-                                        DOWNLOADED_FILES[file_id] = {
-                                            "data": file_data,
-                                            "filename": target_path.name,
-                                            "created": time.time()
-                                        }
-                                        # Clean up old files (older than 1 hour)
-                                        current_time = time.time()
-                                        for k in list(DOWNLOADED_FILES.keys()):
-                                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                                del DOWNLOADED_FILES[k]
-                                        logger.info(f"💾 File stored in DOWNLOADED_FILES: ID={file_id}, filename={target_path.name}, size={len(file_data)} bytes, total files={len(DOWNLOADED_FILES)}")
-                                        
-                                        # Add to recent files for notification
-                                        RECENT_FILE_IDS.insert(0, {
-                                            "file_id": file_id,
-                                            "filename": target_path.name,
-                                            "created": time.time()
-                                        })
-                                        # Keep only last 50 files (to support batch processing)
-                                        if len(RECENT_FILE_IDS) > 50:
-                                            RECENT_FILE_IDS.pop()
-                                        logger.info(f"🔔 FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
-                                        
-                                        # Store file_id for later retrieval
-                                        if not hasattr(open_and_login_with_playwright, '_last_file_id'):
-                                            open_and_login_with_playwright._last_file_id = None
-                                        open_and_login_with_playwright._last_file_id = file_id
-                                    else:
-                                        logger.warning(f"⚠️ File {target_path.name} is empty after reading, not adding to notification")
-                                except Exception as e:
-                                    logger.error(f"❌ Error storing file {target_path.name} for notification: {e}", exc_info=True)
-                            else:
-                                logger.warning(f"⚠️ File not added to notification: exists={file_exists}, size={file_size}, path={target_path}, download_dir={download_dir}")
+                            if os.environ.get("RENDER") and target_path.exists():
+                                file_id = secrets.token_urlsafe(16)
+                                with open(target_path, "rb") as f:
+                                    file_data = f.read()
+                                DOWNLOADED_FILES[file_id] = {
+                                    "data": file_data,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                }
+                                # Clean up old files (older than 1 hour)
+                                current_time = time.time()
+                                for k in list(DOWNLOADED_FILES.keys()):
+                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                        del DOWNLOADED_FILES[k]
+                                logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                                
+                                # Add to recent files for notification
+                                RECENT_FILE_IDS.insert(0, {
+                                    "file_id": file_id,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                })
+                                # Keep only last 10 files
+                                if len(RECENT_FILE_IDS) > 10:
+                                    RECENT_FILE_IDS.pop()
+                                logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                                
+                                # Store file_id for later retrieval
+                                if not hasattr(open_and_login_with_playwright, '_last_file_id'):
+                                    open_and_login_with_playwright._last_file_id = None
+                                open_and_login_with_playwright._last_file_id = file_id
                             
                             # Click the close button after download completes - click twice to close both dialogs
                             await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
@@ -738,121 +713,67 @@ async def process_single_course_in_session(
     module_query: str,
     test_query: str,
     filename_choice: str = "test",
+    is_batch: bool = False,
 ) -> tuple[bool, str]:
     """Process a single course/module/test within an existing browser session (assumes already on courses page) - uses EXACT same flow as single course"""
-    # Increase timeouts for Render (slower environment)
-    is_render_env = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
-    base_timeout = 30000 if is_render_env else 20000
-    short_timeout = 15000 if is_render_env else 10000
-    very_short_timeout = 10000 if is_render_env else 5000
-    
     try:
-        logger.info(f"📍 Starting process_single_course_in_session for: {course_query} - {test_query}")
-        logger.info(f"🔧 Environment check: is_render_env={is_render_env}, download_dir={download_dir}")
-        logger.info(f"⏱️ Timeouts: base={base_timeout}ms, short={short_timeout}ms, very_short={very_short_timeout}ms")
-        
-        # Check if page is still valid
-        try:
-            page_url = page.url
-            logger.info(f"🌐 Current page URL: {page_url}")
-        except Exception as page_check_exc:
-            logger.error(f"❌ Page is not valid: {page_check_exc}")
-            return False, f"Page is not valid: {page_check_exc}"
-        
         # Use EXACT same flow from open_and_login_with_playwright starting from course search
         # If a course query was provided, focus search and type it
         if (course_query or "").strip():
-            logger.info(f"🔍 Step 1: Searching for course: {course_query}")
-            # Wait a bit longer on Render for page to be ready
-            if is_render_env:
-                logger.info("⏳ Waiting 3s for page to be ready (Render)...")
-                await page.wait_for_timeout(3000)
             search_sel = "input[placeholder='Enter course name to search']"
             try:
-                logger.info(f"🔍 Step 1.1: Waiting for search input (timeout: {base_timeout}ms)...")
-                await page.wait_for_selector(search_sel, state="visible", timeout=base_timeout)
-                logger.info("✅ Search input found")
-                logger.info(f"🔍 Step 1.2: Clicking and filling search input...")
+                await page.wait_for_selector(search_sel, state="visible", timeout=20000)
                 await page.click(search_sel)
                 await page.fill(search_sel, course_query.strip())
                 # Submit with Enter to trigger search
-                logger.info(f"🔍 Step 1.3: Submitting search with Enter...")
                 await page.press(search_sel, "Enter")
                 
                 # Wait for search results to appear and click on the course row
                 try:
-                    logger.info(f"🔍 Step 1.4: Waiting for search results table (timeout: {short_timeout}ms)...")
                     # Wait for the results table to appear
-                    await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=short_timeout)
-                    logger.info("✅ Search results table found")
-                    # Additional wait for table to fully render (longer on Render)
-                    wait_time = 5000 if is_render_env else 2000
-                    logger.info(f"⏳ Waiting {wait_time}ms for table to render...")
-                    await page.wait_for_timeout(wait_time)
+                    await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=10000)
+                    await page.wait_for_timeout(2000)  # Additional wait for table to fully render
                     
                     # Try to click the row containing the course name (partial match)
-                    logger.info(f"🔍 Step 1.5: Looking for course row to click...")
                     course_row_clicked = False
                     try:
                         # Look for a row containing the course name text
                         course_row = page.locator("tbody.ui-datatable-data tr").filter(has_text=course_query.strip())
-                        logger.info(f"🔍 Step 1.5.1: Waiting for matching course row (timeout: {short_timeout}ms)...")
-                        await course_row.first.wait_for(state="visible", timeout=short_timeout)
-                        logger.info("✅ Matching course row found, clicking...")
+                        await course_row.first.wait_for(state="visible", timeout=10000)
                         await course_row.first.click()
                         course_row_clicked = True
-                        logger.info("✅ Course row clicked successfully")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to click matching course row: {e}")
+                    except Exception:
                         pass
                     
                     # Fallback: Click the first result row if specific match failed
                     if not course_row_clicked:
-                        logger.info("🔄 Fallback 1: Trying to click first even row...")
                         try:
                             await page.locator("tbody.ui-datatable-data tr.ui-datatable-even").first.click()
                             course_row_clicked = True
-                            logger.info("✅ Fallback 1: First even row clicked")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Fallback 1 failed: {e}")
+                        except Exception:
                             pass
                     
                     # Fallback: Click anywhere on the first row
                     if not course_row_clicked:
-                        logger.info("🔄 Fallback 2: Trying to click first row...")
                         try:
                             await page.locator("tbody.ui-datatable-data tr").first.click()
                             course_row_clicked = True
-                            logger.info("✅ Fallback 2: First row clicked")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Fallback 2 failed: {e}")
+                        except Exception:
                             pass
                     
                     # After clicking the course row, wait for navigation to course page
                     if course_row_clicked:
-                        logger.info("🔍 Step 1.6: Waiting for navigation to course page...")
                         try:
-                            await page.wait_for_load_state("networkidle", timeout=short_timeout)
-                            logger.info("✅ Navigation complete")
-                            # Additional wait on Render
-                            if is_render_env:
-                                logger.info("⏳ Additional 3s wait for Render...")
-                                await page.wait_for_timeout(3000)
-                        except Exception as e:
-                            logger.warning(f"⚠️ Navigation wait failed (continuing anyway): {e}")
+                            await page.wait_for_load_state("networkidle", timeout=10000)
+                        except Exception:
                             pass
-                    else:
-                        logger.error("❌ Failed to click any course row")
-                except Exception as e:
-                    logger.error(f"❌ Error waiting for search results: {e}", exc_info=True)
+                except Exception:
                     pass
-            except Exception as e:
-                logger.error(f"❌ Error in course search: {e}", exc_info=True)
+            except Exception:
                 pass
 
         # If a module was supplied, click the matching module in the sidebar - EXACT same code
         if (module_query or "").strip():
-            logger.info(f"🔍 Step 2: Looking for module: {module_query}")
             target_module = " ".join(module_query.strip().split())
             try:
                 sidebar = page.locator("div.ui-g-3.sidedivpre")
@@ -862,15 +783,9 @@ async def process_single_course_in_session(
 
                 pattern_module = _re_mod.compile(_re_mod.escape(target_module), flags=_re_mod.IGNORECASE)
                 matching_module = module_entries.filter(has_text=pattern_module)
-                logger.info("🔍 Step 2.1: Clicking matching module...")
                 await matching_module.first.click()
-                logger.info("✅ Module clicked")
-                # Longer wait on Render
-                wait_time = 15000 if is_render_env else 10000
-                logger.info(f"⏳ Waiting {wait_time}ms for module to load...")
-                await page.wait_for_timeout(wait_time)
-            except Exception as e:
-                logger.warning(f"⚠️ Error clicking module: {e}")
+                await page.wait_for_timeout(10000)
+            except Exception:
                 pass
 
         # If a specific test should be interacted with, search the preview page - EXACT same code
@@ -890,66 +805,30 @@ async def process_single_course_in_session(
         
         if (test_query or "").strip():
             target_test = " ".join(test_query.strip().split())
-            logger.info(f"🔍 Looking for test: {target_test}")
             try:
                 main_container = page.locator("div.ui-g-9.maindivpre")
-                await main_container.wait_for(state="visible", timeout=short_timeout)
+                await main_container.wait_for(state="visible", timeout=5000)
                 test_cards = main_container.locator("div.ui-g-12.moduletest")
-                
-                # Count available test cards for logging
-                test_count = await test_cards.count()
-                logger.info(f"📋 Found {test_count} test cards")
 
                 pattern = _re.compile(_re.escape(target_test), flags=_re.IGNORECASE)
                 matching_card = test_cards.filter(has_text=pattern)
-                
-                # Check if matching card exists
-                matching_count = await matching_card.count()
-                logger.info(f"🎯 Found {matching_count} matching test cards for '{target_test}'")
 
-                await matching_card.first.wait_for(state="visible", timeout=short_timeout)
+                await matching_card.first.wait_for(state="visible", timeout=5000)
                 card = matching_card.first
                 await card.scroll_into_view_if_needed()
-                # Additional wait on Render
-                if is_render_env:
-                    await page.wait_for_timeout(2000)
 
                 completed_counter = card.locator(
                     "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
                 )
-                await completed_counter.first.wait_for(state="visible", timeout=short_timeout)
+                await completed_counter.first.wait_for(state="visible", timeout=5000)
                 await completed_counter.first.click()
                 test_clicked = True
-                logger.info(f"✅ Test clicked successfully: {target_test}")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to click test '{target_test}': {e}")
-                # Try fallback: click first test card if exact match fails
-                try:
-                    logger.info("🔄 Trying fallback: clicking first test card")
-                    main_container = page.locator("div.ui-g-9.maindivpre")
-                    await main_container.wait_for(state="visible", timeout=short_timeout)
-                    test_cards = main_container.locator("div.ui-g-12.moduletest")
-                    first_card = test_cards.first
-                    await first_card.wait_for(state="visible", timeout=short_timeout)
-                    await first_card.scroll_into_view_if_needed()
-                    if is_render_env:
-                        await page.wait_for_timeout(2000)
-                    completed_counter = first_card.locator(
-                        "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
-                    )
-                    await completed_counter.first.wait_for(state="visible", timeout=short_timeout)
-                    await completed_counter.first.click()
-                    test_clicked = True
-                    logger.info("✅ Fallback: First test card clicked successfully")
-                except Exception as e2:
-                    logger.error(f"❌ Fallback also failed: {e2}")
+            except Exception:
+                pass
 
         if test_clicked:
             try:
-                await page.wait_for_load_state("networkidle", timeout=very_short_timeout)
-                # Additional wait on Render
-                if is_render_env:
-                    await page.wait_for_timeout(3000)
+                await page.wait_for_load_state("networkidle", timeout=2000)
             except Exception:
                 pass
             
@@ -957,10 +836,8 @@ async def process_single_course_in_session(
                 checkbox = page.locator(
                     "div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                 ).first
-                await checkbox.wait_for(state="visible", timeout=short_timeout)
+                await checkbox.wait_for(state="visible", timeout=10000)
                 await checkbox.click()
-                if is_render_env:
-                    await page.wait_for_timeout(1000)
 
                 select_all = (
                     page.locator("span.text-underline")
@@ -968,10 +845,8 @@ async def process_single_course_in_session(
                     .first
                 )
                 try:
-                    await select_all.wait_for(state="visible", timeout=very_short_timeout)
+                    await select_all.wait_for(state="visible", timeout=3000)
                     await select_all.click()
-                    if is_render_env:
-                        await page.wait_for_timeout(1000)
                 except Exception:
                     pass
 
@@ -980,187 +855,115 @@ async def process_single_course_in_session(
                     .filter(has_text="Action")
                     .first
                 )
-                await action_label.wait_for(state="visible", timeout=short_timeout)
+                await action_label.wait_for(state="visible", timeout=10000)
                 dropdown_container = action_label.locator(
                     "xpath=ancestor::div[contains(@class, 'ui-dropdown')]"
                 )
                 await dropdown_container.first.click()
-                if is_render_env:
-                    await page.wait_for_timeout(1000)
 
                 shareable_option = page.locator(
                     "li.ui-dropdown-item.ui-corner-all[aria-label='Generate Shareable Link']"
                 )
-                await shareable_option.first.wait_for(state="visible", timeout=very_short_timeout)
+                await shareable_option.first.wait_for(state="visible", timeout=5000)
                 await shareable_option.first.click()
-                wait_time = 2000 if is_render_env else 1000
-                await page.wait_for_timeout(wait_time)
+                await page.wait_for_timeout(90000)
 
                 completed_label = page.locator(
                     "span.ui-multiselect-label.ui-corner-all"
                 ).filter(has_text="Completed").first
-                await completed_label.wait_for(state="visible", timeout=very_short_timeout)
+                await completed_label.wait_for(state="visible", timeout=5000)
                 await completed_label.click()
-                if is_render_env:
-                    await page.wait_for_timeout(1000)
 
                 multiselect_checkbox = page.locator(
                     "div.ui-multiselect-panel div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                 ).first
-                await multiselect_checkbox.wait_for(state="visible", timeout=very_short_timeout)
+                await multiselect_checkbox.wait_for(state="visible", timeout=5000)
                 await multiselect_checkbox.click()
-                if is_render_env:
-                    await page.wait_for_timeout(1000)
 
                 download_results = (
                     page.locator("span", has_text="Download results").first
                 )
-                await download_results.wait_for(state="visible", timeout=short_timeout)
+                await download_results.wait_for(state="visible", timeout=10000)
                 await download_results.scroll_into_view_if_needed()
                 await download_results.click()
-                if is_render_env:
-                    await page.wait_for_timeout(2000)
 
                 # Select Excel option instead of CSV
                 excel_option_clicked = False
                 try:
                     # Try to find by label text "Excel (.xlsx)"
                     excel_label = page.locator("label", has_text="Excel (.xlsx)").first
-                    await excel_label.wait_for(state="visible", timeout=very_short_timeout)
+                    await excel_label.wait_for(state="visible", timeout=5000)
                     await excel_label.click()
                     excel_option_clicked = True
-                    if is_render_env:
-                        await page.wait_for_timeout(1000)
                 except Exception:
                     try:
                         # Try to find by input value="excel"
                         excel_input = page.locator('input[type="radio"][name="downloadFileType"][value="excel"]')
-                        await excel_input.wait_for(state="visible", timeout=very_short_timeout)
+                        await excel_input.wait_for(state="visible", timeout=5000)
                         await excel_input.click()
                         excel_option_clicked = True
-                        if is_render_env:
-                            await page.wait_for_timeout(1000)
                     except Exception:
                         try:
                             # Try to find p-radiobutton with label="Excel (.xlsx)"
                             excel_radio = page.locator('p-radiobutton[label="Excel (.xlsx)"]').first
-                            await excel_radio.wait_for(state="visible", timeout=very_short_timeout)
+                            await excel_radio.wait_for(state="visible", timeout=5000)
                             await excel_radio.click()
                             excel_option_clicked = True
-                            if is_render_env:
-                                await page.wait_for_timeout(1000)
                         except Exception:
                             # Fallback: find span inside p-radiobutton with Excel label
                             excel_span = page.locator('p-radiobutton:has(label:has-text("Excel")) span.ui-radiobutton-icon').first
-                            await excel_span.wait_for(state="visible", timeout=very_short_timeout)
+                            await excel_span.wait_for(state="visible", timeout=5000)
                             await excel_span.click()
                             excel_option_clicked = True
-                            if is_render_env:
-                                await page.wait_for_timeout(1000)
 
                 download_button = page.locator(
                     "button.download-button"
                 ).first
-                logger.info("🔍 Waiting for download button to appear...")
+                await download_button.wait_for(state="visible", timeout=5000)
                 try:
-                    await download_button.wait_for(state="visible", timeout=base_timeout)
-                    logger.info("✅ Download button found")
-                    if is_render_env:
-                        await page.wait_for_timeout(2000)
-                except Exception as e:
-                    logger.error(f"❌ Download button not found: {e}")
-                    # Try alternative selectors
-                    try:
-                        download_button = page.locator("button:has-text('Download')").first
-                        await download_button.wait_for(state="visible", timeout=short_timeout)
-                        logger.info("✅ Found download button using alternative selector")
-                        if is_render_env:
-                            await page.wait_for_timeout(2000)
-                    except Exception:
-                        return False, f"Download button not found after waiting"
-                
-                try:
-                    logger.info("📥 Starting download...")
-                    # Longer timeout on Render
-                    download_timeout = 60000 if is_render_env else 30000
-                    async with page.expect_download(timeout=download_timeout) as download_info:
+                    async with page.expect_download() as download_info:
                         await download_button.click()
                     download = await download_info.value
                     suggested_name = download.suggested_filename
-                    logger.info(f"📥 Download started: {suggested_name}")
                     extension = Path(suggested_name).suffix or ".xlsx"
                     if sanitized_filename:
                         target_path = download_dir / f"{sanitized_filename}{extension}"
                     else:
                         target_path = download_dir / suggested_name
                     await download.save_as(str(target_path))
-                    logger.info(f"💾 File saved to: {target_path}")
-                    
-                    # Wait a bit for file to be fully written and retry if needed
-                    file_exists = False
-                    logger.info(f"🔍 Starting file detection for {target_path.name} at {target_path}")
-                    # More retries and longer waits on Render
-                    max_retries = 20 if is_render_env else 10
-                    retry_wait = 2000 if is_render_env else 1000
-                    for retry in range(max_retries):
-                        await page.wait_for_timeout(retry_wait)  # Wait between retries
-                        if target_path.exists():
-                            file_size = target_path.stat().st_size
-                            if file_size > 0:
-                                file_exists = True
-                                logger.info(f"✅ File found after {retry+1} retries: {target_path.name}, size: {file_size} bytes")
-                                break
-                            else:
-                                logger.debug(f"File exists but is empty (retry {retry+1}/10): {target_path.name}")
-                        else:
-                            logger.debug(f"File not found yet (retry {retry+1}/10): {target_path}")
                     
                     # On Render, store file info for download (same as in open_and_login_with_playwright)
-                    # Check if we're on Render (either by env var or by checking if we're using /tmp/downloads)
-                    is_render = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
-                    file_size = target_path.stat().st_size if target_path.exists() else 0
-                    logger.info(f"📥 Download completed: path={target_path}, exists={file_exists}, size={file_size}, RENDER={is_render}, download_dir={download_dir}")
-                    
-                    # Always try to add file if it exists (for Render deployment)
-                    if file_exists and file_size > 0:
-                        try:
-                            logger.info(f"📦 Storing file in memory: {target_path.name} ({file_size} bytes)")
-                            file_id = secrets.token_urlsafe(16)
-                            with open(target_path, "rb") as f:
-                                file_data = f.read()
-                            
-                            if len(file_data) > 0:
-                                DOWNLOADED_FILES[file_id] = {
-                                    "data": file_data,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                }
-                                # Clean up old files (older than 1 hour)
-                                current_time = time.time()
-                                for k in list(DOWNLOADED_FILES.keys()):
-                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                        del DOWNLOADED_FILES[k]
-                                logger.info(f"💾 File stored in DOWNLOADED_FILES: ID={file_id}, filename={target_path.name}, size={len(file_data)} bytes, total files={len(DOWNLOADED_FILES)}")
-                                
-                                # Add to recent files for notification
-                                RECENT_FILE_IDS.insert(0, {
-                                    "file_id": file_id,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                })
-                                # Keep only last 50 files (to support batch processing)
-                                if len(RECENT_FILE_IDS) > 50:
-                                    RECENT_FILE_IDS.pop()
-                                logger.info(f"🔔 FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
-                            else:
-                                logger.warning(f"⚠️ File {target_path.name} is empty after reading, not adding to notification")
-                        except Exception as e:
-                            logger.error(f"❌ Error storing file {target_path.name} for notification: {e}", exc_info=True)
-                    else:
-                        logger.warning(f"⚠️ File not added to notification: exists={file_exists}, size={file_size}, path={target_path}, download_dir={download_dir}")
+                    if os.environ.get("RENDER") and target_path.exists():
+                        file_id = secrets.token_urlsafe(16)
+                        with open(target_path, "rb") as f:
+                            file_data = f.read()
+                        DOWNLOADED_FILES[file_id] = {
+                            "data": file_data,
+                            "filename": target_path.name,
+                            "created": time.time()
+                        }
+                        # Clean up old files (older than 1 hour)
+                        current_time = time.time()
+                        for k in list(DOWNLOADED_FILES.keys()):
+                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                del DOWNLOADED_FILES[k]
+                        logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                        
+                        # Add to recent files for notification
+                        RECENT_FILE_IDS.insert(0, {
+                            "file_id": file_id,
+                            "filename": target_path.name,
+                            "created": time.time()
+                        })
+                        # Keep only last 10 files
+                        if len(RECENT_FILE_IDS) > 10:
+                            RECENT_FILE_IDS.pop()
+                        logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
                     
                     # Close dialogs after download - EXACT same code
-                    await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
+                    # Increase wait time for batch processing to ensure download completes
+                    wait_time = 20000 if is_batch else 10000  # 20 seconds for batch, 10 seconds for single
+                    await page.wait_for_timeout(wait_time)  # Wait after download completes
                     
                     close_clicked = False
                     
@@ -1233,44 +1036,13 @@ async def process_single_course_in_session(
                             await close_span.click(force=True)
                         except Exception:
                             pass
-                except Exception as download_exc:
-                    logger.warning(f"⚠️ Download exception (may have still downloaded): {download_exc}")
-                    # Check if file exists even if there was an exception
-                    if sanitized_filename:
-                        # Try to find the file that might have been downloaded
-                        possible_files = list(download_dir.glob(f"{sanitized_filename}*"))
-                        if possible_files:
-                            target_path = possible_files[0]
-                            logger.info(f"📁 Found file despite exception: {target_path}")
-                            file_exists = target_path.exists() and target_path.stat().st_size > 0
-                            if not file_exists:
-                                return False, f"Error during download: {download_exc}"
-                            # Continue to file storage code below (don't return)
-                        else:
-                            logger.error(f"❌ No file found after download exception")
-                            return False, f"Error during download: {download_exc}"
-                    else:
-                        return False, f"Error during download: {download_exc}"
+                except Exception:
+                    await download_button.click()
             except Exception as exc:  # noqa: BLE001
-                logger.error(f"❌ Error during download process: {exc}", exc_info=True)
-                # Even if there's an error, check if file was downloaded
-                if sanitized_filename:
-                    possible_files = list(download_dir.glob(f"{sanitized_filename}*"))
-                    if possible_files:
-                        target_path = possible_files[0]
-                        logger.info(f"📁 Found file despite error: {target_path}")
-                        file_exists = target_path.exists() and target_path.stat().st_size > 0
-                        if not file_exists:
-                            return False, f"Error during download: {exc}"
-                        # Continue to file storage code below (don't return)
-                    else:
-                        return False, f"Error during download: {exc}"
-                else:
-                    return False, f"Error during download: {exc}"
+                return False, f"Error during download: {exc}"
 
             return True, f"Successfully processed {course_query} - {test_query}"
         else:
-            logger.error(f"❌ Test was not clicked successfully for: {test_query}")
             return False, "Test was not clicked successfully"
     
     except Exception as exc:  # noqa: BLE001
@@ -1412,74 +1184,47 @@ async def process_multiple_reports(
                     continue
                 
                 try:
-                    logger.info(f"🔄 Processing course {idx}/{len(csv_rows)}: {course_query} - {test_query}")
-                    logger.info(f"📞 About to call process_single_course_in_session...")
-                    logger.info(f"📋 Parameters: course={course_query}, module={module_query}, test={test_query}, download_dir={download_dir}")
-                    try:
-                        ok, msg = await process_single_course_in_session(
-                            page,
-                            download_dir,
-                            course_query,
-                            module_query,
-                            test_query,
-                            filename_choice=filename_choice,
-                        )
-                        logger.info(f"📞 process_single_course_in_session returned: ok={ok}, msg={msg[:100] if msg else 'None'}")
-                    except Exception as func_exc:
-                        logger.error(f"❌ Exception INSIDE process_single_course_in_session: {func_exc}", exc_info=True)
-                        ok, msg = False, f"Exception in process_single_course_in_session: {func_exc}"
+                    ok, msg = await process_single_course_in_session(
+                        page,
+                        download_dir,
+                        course_query,
+                        module_query,
+                        test_query,
+                        filename_choice=filename_choice,
+                        is_batch=True,  # Indicate this is batch processing
+                    )
                     
                     if ok:
                         success_count += 1
                         results.append(f"Row {idx}: Success - {course_query} - {test_query}")
-                        logger.info(f"✅ Course {idx} completed successfully. Current RECENT_FILE_IDS count: {len(RECENT_FILE_IDS)}, DOWNLOADED_FILES count: {len(DOWNLOADED_FILES)}")
                         
                         # Go back to Courses page for next iteration
-                        is_render_env = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
-                        wait_before_nav = 5000 if is_render_env else 2000
-                        await page.wait_for_timeout(wait_before_nav)
+                        await page.wait_for_timeout(2000)
                         try:
                             course_locator = page.locator("div.left-menu li[ptooltip='Courses']")
-                            nav_timeout = 30000 if is_render_env else 10000
-                            await course_locator.wait_for(state="visible", timeout=nav_timeout)
+                            await course_locator.wait_for(state="visible", timeout=10000)
                             await course_locator.first.click()
-                            wait_after_nav = 5000 if is_render_env else 2000
-                            await page.wait_for_timeout(wait_after_nav)
-                            # Wait for page to load after navigation
-                            try:
-                                await page.wait_for_load_state("networkidle", timeout=nav_timeout)
-                            except Exception:
-                                pass
-                        except Exception as nav_exc:
-                            logger.warning(f"⚠️ Navigation back to Courses failed: {nav_exc}")
+                            await page.wait_for_timeout(2000)
+                        except Exception:
                             pass
                     else:
                         error_count += 1
                         results.append(f"Row {idx}: Failed - {msg}")
-                        logger.warning(f"❌ Course {idx} failed: {msg}")
                     
                     await page.wait_for_timeout(1000)
                     
                 except Exception as exc:  # noqa: BLE001
                     error_count += 1
                     results.append(f"Row {idx}: Error - {exc}")
-                    logger.error(f"❌ Exception processing course {idx}: {exc}", exc_info=True)
             
             # Close browser after all rows are processed
             await browser.close()
-            
-            # Log final state
-            logger.info(f"🏁 Batch processing completed. Final state: RECENT_FILE_IDS={len(RECENT_FILE_IDS)}, DOWNLOADED_FILES={len(DOWNLOADED_FILES)}")
-            if len(RECENT_FILE_IDS) > 0:
-                logger.info(f"📋 Files in notification list: {[f['filename'] for f in RECENT_FILE_IDS[:5]]}")
     
     except Exception as exc:  # noqa: BLE001
         error_count += len(csv_rows) - success_count
         results.append(f"Critical error: {exc}")
-        logger.error(f"❌ Critical error in batch processing: {exc}", exc_info=True)
     
     summary = f"Processed {len(csv_rows)} rows: {success_count} successful, {error_count} failed"
-    logger.info(f"📊 Batch processing summary: {summary}")
     return success_count > 0, summary + "\n" + "\n".join(results)
 
 
@@ -1490,41 +1235,18 @@ def index():
 @app.get("/api/recent-files")
 def get_recent_files():
     """Get recent file downloads for notification system"""
-    # Return all files (no time filter - files are already limited to last 50)
+    # Return files from last 5 minutes
     current_time = time.time()
-    recent = []
-    
-    logger.info(f"API called: RECENT_FILE_IDS has {len(RECENT_FILE_IDS)} files, DOWNLOADED_FILES has {len(DOWNLOADED_FILES)} files")
-    
-    # Process all files in RECENT_FILE_IDS
-    for idx, f in enumerate(RECENT_FILE_IDS):
-        try:
-            # Validate file structure
-            if not isinstance(f, dict):
-                logger.error(f"File at index {idx} is not a dict: {type(f)}")
-                continue
-                
-            file_id = f.get("file_id")
-            filename = f.get("filename", "unknown")
-            created = f.get("created", 0)
-            
-            if not file_id:
-                logger.error(f"File at index {idx} missing file_id: {f}")
-                continue
-            
-            time_diff = current_time - created
-            recent.append({
-                "file_id": file_id,
-                "filename": filename,
-                "time_ago": int(time_diff)
-            })
-            age_minutes = int(time_diff) // 60
-            logger.info(f"Added file {idx+1}: {filename} (ID: {file_id[:8]}...) - {age_minutes} minutes old")
-        except Exception as e:
-            logger.error(f"Error processing file at index {idx} in RECENT_FILE_IDS: {e}, file data: {f}", exc_info=True)
-    
-    logger.info(f"API response: Returning {len(recent)} files from {len(RECENT_FILE_IDS)} total recent files")
-    
+    recent = [
+        {
+            "file_id": f["file_id"],
+            "filename": f["filename"],
+            "time_ago": int(current_time - f["created"])
+        }
+        for f in RECENT_FILE_IDS
+        if current_time - f["created"] < 300  # Last 5 minutes
+    ]
+    logger.info(f"API called: Returning {len(recent)} files from {len(RECENT_FILE_IDS)} total recent files")
     return jsonify({"files": recent})
 
 

@@ -487,7 +487,7 @@
 
             // Start checking for new files
             checkForNewFiles();
-            setInterval(checkForNewFiles, 10000); // Check every 10 seconds for faster updates during batch processing
+            setInterval(checkForNewFiles, 30000); // Check every 30 seconds
         });
 
         let seenFileIds = new Set();
@@ -503,17 +503,12 @@
                     if (files.length > 0) {
                         notificationIcon.classList.add('has-notifications');
                         
-                        // Always update the list to show all available files (for batch processing)
-                        // Show all files immediately as they become available during batch processing
-                        const previousCount = seenFileIds.size;
-                        files.forEach(f => seenFileIds.add(f.file_id));
+                        // Filter out already seen files
+                        const newFiles = files.filter(f => !seenFileIds.has(f.file_id));
+                        newFiles.forEach(f => seenFileIds.add(f.file_id));
                         
-                        // Always update the list - this ensures files appear immediately as they're added
-                        updateNotificationList(files);
-                        
-                        // Log when new files are detected
-                        if (files.length > previousCount) {
-                            console.log(`✅ New file(s) detected! Total: ${files.length} files available`);
+                        if (newFiles.length > 0 || files.length > 0) {
+                            updateNotificationList(files);
                         }
                     } else {
                         notificationIcon.classList.remove('has-notifications');
