@@ -190,7 +190,7 @@ async def open_and_login_with_playwright(
     keep_open_ms: int = 300000,
 ) -> tuple[bool, str]:
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import async_playwright  # type: ignore
     except Exception as exc:  # noqa: BLE001
         return False, f"Playwright not installed: {exc}"
 
@@ -740,13 +740,22 @@ async def process_single_course_in_session(
     filename_choice: str = "test",
 ) -> tuple[bool, str]:
     """Process a single course/module/test within an existing browser session (assumes already on courses page) - uses EXACT same flow as single course"""
+    # Increase timeouts for Render (slower environment)
+    is_render_env = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
+    base_timeout = 30000 if is_render_env else 20000
+    short_timeout = 15000 if is_render_env else 10000
+    very_short_timeout = 10000 if is_render_env else 5000
+    
     try:
         # Use EXACT same flow from open_and_login_with_playwright starting from course search
         # If a course query was provided, focus search and type it
         if (course_query or "").strip():
+            # Wait a bit longer on Render for page to be ready
+            if is_render_env:
+                await page.wait_for_timeout(3000)
             search_sel = "input[placeholder='Enter course name to search']"
             try:
-                await page.wait_for_selector(search_sel, state="visible", timeout=20000)
+                await page.wait_for_selector(search_sel, state="visible", timeout=base_timeout)
                 await page.click(search_sel)
                 await page.fill(search_sel, course_query.strip())
                 # Submit with Enter to trigger search
@@ -755,15 +764,17 @@ async def process_single_course_in_session(
                 # Wait for search results to appear and click on the course row
                 try:
                     # Wait for the results table to appear
-                    await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=10000)
-                    await page.wait_for_timeout(2000)  # Additional wait for table to fully render
+                    await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=short_timeout)
+                    # Additional wait for table to fully render (longer on Render)
+                    wait_time = 5000 if is_render_env else 2000
+                    await page.wait_for_timeout(wait_time)
                     
                     # Try to click the row containing the course name (partial match)
                     course_row_clicked = False
                     try:
                         # Look for a row containing the course name text
                         course_row = page.locator("tbody.ui-datatable-data tr").filter(has_text=course_query.strip())
-                        await course_row.first.wait_for(state="visible", timeout=10000)
+                        await course_row.first.wait_for(state="visible", timeout=short_timeout)
                         await course_row.first.click()
                         course_row_clicked = True
                     except Exception:
@@ -788,7 +799,10 @@ async def process_single_course_in_session(
                     # After clicking the course row, wait for navigation to course page
                     if course_row_clicked:
                         try:
-                            await page.wait_for_load_state("networkidle", timeout=10000)
+                            await page.wait_for_load_state("networkidle", timeout=short_timeout)
+                            # Additional wait on Render
+                            if is_render_env:
+                                await page.wait_for_timeout(3000)
                         except Exception:
                             pass
                 except Exception:
@@ -808,7 +822,9 @@ async def process_single_course_in_session(
                 pattern_module = _re_mod.compile(_re_mod.escape(target_module), flags=_re_mod.IGNORECASE)
                 matching_module = module_entries.filter(has_text=pattern_module)
                 await matching_module.first.click()
-                await page.wait_for_timeout(10000)
+                # Longer wait on Render
+                wait_time = 15000 if is_render_env else 10000
+                await page.wait_for_timeout(wait_time)
             except Exception:
                 pass
 
@@ -829,30 +845,66 @@ async def process_single_course_in_session(
         
         if (test_query or "").strip():
             target_test = " ".join(test_query.strip().split())
+            logger.info(f"🔍 Looking for test: {target_test}")
             try:
                 main_container = page.locator("div.ui-g-9.maindivpre")
-                await main_container.wait_for(state="visible", timeout=5000)
+                await main_container.wait_for(state="visible", timeout=short_timeout)
                 test_cards = main_container.locator("div.ui-g-12.moduletest")
+                
+                # Count available test cards for logging
+                test_count = await test_cards.count()
+                logger.info(f"📋 Found {test_count} test cards")
 
                 pattern = _re.compile(_re.escape(target_test), flags=_re.IGNORECASE)
                 matching_card = test_cards.filter(has_text=pattern)
+                
+                # Check if matching card exists
+                matching_count = await matching_card.count()
+                logger.info(f"🎯 Found {matching_count} matching test cards for '{target_test}'")
 
-                await matching_card.first.wait_for(state="visible", timeout=5000)
+                await matching_card.first.wait_for(state="visible", timeout=short_timeout)
                 card = matching_card.first
                 await card.scroll_into_view_if_needed()
+                # Additional wait on Render
+                if is_render_env:
+                    await page.wait_for_timeout(2000)
 
                 completed_counter = card.locator(
                     "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
                 )
-                await completed_counter.first.wait_for(state="visible", timeout=5000)
+                await completed_counter.first.wait_for(state="visible", timeout=short_timeout)
                 await completed_counter.first.click()
                 test_clicked = True
-            except Exception:
-                pass
+                logger.info(f"✅ Test clicked successfully: {target_test}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to click test '{target_test}': {e}")
+                # Try fallback: click first test card if exact match fails
+                try:
+                    logger.info("🔄 Trying fallback: clicking first test card")
+                    main_container = page.locator("div.ui-g-9.maindivpre")
+                    await main_container.wait_for(state="visible", timeout=short_timeout)
+                    test_cards = main_container.locator("div.ui-g-12.moduletest")
+                    first_card = test_cards.first
+                    await first_card.wait_for(state="visible", timeout=short_timeout)
+                    await first_card.scroll_into_view_if_needed()
+                    if is_render_env:
+                        await page.wait_for_timeout(2000)
+                    completed_counter = first_card.locator(
+                        "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
+                    )
+                    await completed_counter.first.wait_for(state="visible", timeout=short_timeout)
+                    await completed_counter.first.click()
+                    test_clicked = True
+                    logger.info("✅ Fallback: First test card clicked successfully")
+                except Exception as e2:
+                    logger.error(f"❌ Fallback also failed: {e2}")
 
         if test_clicked:
             try:
-                await page.wait_for_load_state("networkidle", timeout=2000)
+                await page.wait_for_load_state("networkidle", timeout=very_short_timeout)
+                # Additional wait on Render
+                if is_render_env:
+                    await page.wait_for_timeout(3000)
             except Exception:
                 pass
             
@@ -860,8 +912,10 @@ async def process_single_course_in_session(
                 checkbox = page.locator(
                     "div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                 ).first
-                await checkbox.wait_for(state="visible", timeout=10000)
+                await checkbox.wait_for(state="visible", timeout=short_timeout)
                 await checkbox.click()
+                if is_render_env:
+                    await page.wait_for_timeout(1000)
 
                 select_all = (
                     page.locator("span.text-underline")
@@ -869,8 +923,10 @@ async def process_single_course_in_session(
                     .first
                 )
                 try:
-                    await select_all.wait_for(state="visible", timeout=3000)
+                    await select_all.wait_for(state="visible", timeout=very_short_timeout)
                     await select_all.click()
+                    if is_render_env:
+                        await page.wait_for_timeout(1000)
                 except Exception:
                     pass
 
@@ -879,88 +935,130 @@ async def process_single_course_in_session(
                     .filter(has_text="Action")
                     .first
                 )
-                await action_label.wait_for(state="visible", timeout=10000)
+                await action_label.wait_for(state="visible", timeout=short_timeout)
                 dropdown_container = action_label.locator(
                     "xpath=ancestor::div[contains(@class, 'ui-dropdown')]"
                 )
                 await dropdown_container.first.click()
+                if is_render_env:
+                    await page.wait_for_timeout(1000)
 
                 shareable_option = page.locator(
                     "li.ui-dropdown-item.ui-corner-all[aria-label='Generate Shareable Link']"
                 )
-                await shareable_option.first.wait_for(state="visible", timeout=5000)
+                await shareable_option.first.wait_for(state="visible", timeout=very_short_timeout)
                 await shareable_option.first.click()
-                await page.wait_for_timeout(1000)
+                wait_time = 2000 if is_render_env else 1000
+                await page.wait_for_timeout(wait_time)
 
                 completed_label = page.locator(
                     "span.ui-multiselect-label.ui-corner-all"
                 ).filter(has_text="Completed").first
-                await completed_label.wait_for(state="visible", timeout=5000)
+                await completed_label.wait_for(state="visible", timeout=very_short_timeout)
                 await completed_label.click()
+                if is_render_env:
+                    await page.wait_for_timeout(1000)
 
                 multiselect_checkbox = page.locator(
                     "div.ui-multiselect-panel div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                 ).first
-                await multiselect_checkbox.wait_for(state="visible", timeout=5000)
+                await multiselect_checkbox.wait_for(state="visible", timeout=very_short_timeout)
                 await multiselect_checkbox.click()
+                if is_render_env:
+                    await page.wait_for_timeout(1000)
 
                 download_results = (
                     page.locator("span", has_text="Download results").first
                 )
-                await download_results.wait_for(state="visible", timeout=10000)
+                await download_results.wait_for(state="visible", timeout=short_timeout)
                 await download_results.scroll_into_view_if_needed()
                 await download_results.click()
+                if is_render_env:
+                    await page.wait_for_timeout(2000)
 
                 # Select Excel option instead of CSV
                 excel_option_clicked = False
                 try:
                     # Try to find by label text "Excel (.xlsx)"
                     excel_label = page.locator("label", has_text="Excel (.xlsx)").first
-                    await excel_label.wait_for(state="visible", timeout=5000)
+                    await excel_label.wait_for(state="visible", timeout=very_short_timeout)
                     await excel_label.click()
                     excel_option_clicked = True
+                    if is_render_env:
+                        await page.wait_for_timeout(1000)
                 except Exception:
                     try:
                         # Try to find by input value="excel"
                         excel_input = page.locator('input[type="radio"][name="downloadFileType"][value="excel"]')
-                        await excel_input.wait_for(state="visible", timeout=5000)
+                        await excel_input.wait_for(state="visible", timeout=very_short_timeout)
                         await excel_input.click()
                         excel_option_clicked = True
+                        if is_render_env:
+                            await page.wait_for_timeout(1000)
                     except Exception:
                         try:
                             # Try to find p-radiobutton with label="Excel (.xlsx)"
                             excel_radio = page.locator('p-radiobutton[label="Excel (.xlsx)"]').first
-                            await excel_radio.wait_for(state="visible", timeout=5000)
+                            await excel_radio.wait_for(state="visible", timeout=very_short_timeout)
                             await excel_radio.click()
                             excel_option_clicked = True
+                            if is_render_env:
+                                await page.wait_for_timeout(1000)
                         except Exception:
                             # Fallback: find span inside p-radiobutton with Excel label
                             excel_span = page.locator('p-radiobutton:has(label:has-text("Excel")) span.ui-radiobutton-icon').first
-                            await excel_span.wait_for(state="visible", timeout=5000)
+                            await excel_span.wait_for(state="visible", timeout=very_short_timeout)
                             await excel_span.click()
                             excel_option_clicked = True
+                            if is_render_env:
+                                await page.wait_for_timeout(1000)
 
                 download_button = page.locator(
                     "button.download-button"
                 ).first
-                await download_button.wait_for(state="visible", timeout=5000)
+                logger.info("🔍 Waiting for download button to appear...")
                 try:
-                    async with page.expect_download() as download_info:
+                    await download_button.wait_for(state="visible", timeout=base_timeout)
+                    logger.info("✅ Download button found")
+                    if is_render_env:
+                        await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.error(f"❌ Download button not found: {e}")
+                    # Try alternative selectors
+                    try:
+                        download_button = page.locator("button:has-text('Download')").first
+                        await download_button.wait_for(state="visible", timeout=short_timeout)
+                        logger.info("✅ Found download button using alternative selector")
+                        if is_render_env:
+                            await page.wait_for_timeout(2000)
+                    except Exception:
+                        return False, f"Download button not found after waiting"
+                
+                try:
+                    logger.info("📥 Starting download...")
+                    # Longer timeout on Render
+                    download_timeout = 60000 if is_render_env else 30000
+                    async with page.expect_download(timeout=download_timeout) as download_info:
                         await download_button.click()
                     download = await download_info.value
                     suggested_name = download.suggested_filename
+                    logger.info(f"📥 Download started: {suggested_name}")
                     extension = Path(suggested_name).suffix or ".xlsx"
                     if sanitized_filename:
                         target_path = download_dir / f"{sanitized_filename}{extension}"
                     else:
                         target_path = download_dir / suggested_name
                     await download.save_as(str(target_path))
+                    logger.info(f"💾 File saved to: {target_path}")
                     
                     # Wait a bit for file to be fully written and retry if needed
                     file_exists = False
                     logger.info(f"🔍 Starting file detection for {target_path.name} at {target_path}")
-                    for retry in range(10):  # Increased retries for Render
-                        await page.wait_for_timeout(1000)  # Wait 1 second between retries
+                    # More retries and longer waits on Render
+                    max_retries = 20 if is_render_env else 10
+                    retry_wait = 2000 if is_render_env else 1000
+                    for retry in range(max_retries):
+                        await page.wait_for_timeout(retry_wait)  # Wait between retries
                         if target_path.exists():
                             file_size = target_path.stat().st_size
                             if file_size > 0:
@@ -1090,13 +1188,44 @@ async def process_single_course_in_session(
                             await close_span.click(force=True)
                         except Exception:
                             pass
-                except Exception:
-                    await download_button.click()
+                except Exception as download_exc:
+                    logger.warning(f"⚠️ Download exception (may have still downloaded): {download_exc}")
+                    # Check if file exists even if there was an exception
+                    if sanitized_filename:
+                        # Try to find the file that might have been downloaded
+                        possible_files = list(download_dir.glob(f"{sanitized_filename}*"))
+                        if possible_files:
+                            target_path = possible_files[0]
+                            logger.info(f"📁 Found file despite exception: {target_path}")
+                            file_exists = target_path.exists() and target_path.stat().st_size > 0
+                            if not file_exists:
+                                return False, f"Error during download: {download_exc}"
+                            # Continue to file storage code below (don't return)
+                        else:
+                            logger.error(f"❌ No file found after download exception")
+                            return False, f"Error during download: {download_exc}"
+                    else:
+                        return False, f"Error during download: {download_exc}"
             except Exception as exc:  # noqa: BLE001
-                return False, f"Error during download: {exc}"
+                logger.error(f"❌ Error during download process: {exc}", exc_info=True)
+                # Even if there's an error, check if file was downloaded
+                if sanitized_filename:
+                    possible_files = list(download_dir.glob(f"{sanitized_filename}*"))
+                    if possible_files:
+                        target_path = possible_files[0]
+                        logger.info(f"📁 Found file despite error: {target_path}")
+                        file_exists = target_path.exists() and target_path.stat().st_size > 0
+                        if not file_exists:
+                            return False, f"Error during download: {exc}"
+                        # Continue to file storage code below (don't return)
+                    else:
+                        return False, f"Error during download: {exc}"
+                else:
+                    return False, f"Error during download: {exc}"
 
             return True, f"Successfully processed {course_query} - {test_query}"
         else:
+            logger.error(f"❌ Test was not clicked successfully for: {test_query}")
             return False, "Test was not clicked successfully"
     
     except Exception as exc:  # noqa: BLE001
@@ -1113,7 +1242,7 @@ async def process_multiple_reports(
 ) -> tuple[bool, str]:
     """Process multiple course reports from CSV rows - reuses same browser session"""
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import async_playwright  # type: ignore
     except Exception as exc:  # noqa: BLE001
         return False, f"Playwright not installed: {exc}"
     
@@ -1254,13 +1383,23 @@ async def process_multiple_reports(
                         logger.info(f"✅ Course {idx} completed successfully. Current RECENT_FILE_IDS count: {len(RECENT_FILE_IDS)}, DOWNLOADED_FILES count: {len(DOWNLOADED_FILES)}")
                         
                         # Go back to Courses page for next iteration
-                        await page.wait_for_timeout(2000)
+                        is_render_env = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
+                        wait_before_nav = 5000 if is_render_env else 2000
+                        await page.wait_for_timeout(wait_before_nav)
                         try:
                             course_locator = page.locator("div.left-menu li[ptooltip='Courses']")
-                            await course_locator.wait_for(state="visible", timeout=10000)
+                            nav_timeout = 30000 if is_render_env else 10000
+                            await course_locator.wait_for(state="visible", timeout=nav_timeout)
                             await course_locator.first.click()
-                            await page.wait_for_timeout(2000)
-                        except Exception:
+                            wait_after_nav = 5000 if is_render_env else 2000
+                            await page.wait_for_timeout(wait_after_nav)
+                            # Wait for page to load after navigation
+                            try:
+                                await page.wait_for_load_state("networkidle", timeout=nav_timeout)
+                            except Exception:
+                                pass
+                        except Exception as nav_exc:
+                            logger.warning(f"⚠️ Navigation back to Courses failed: {nav_exc}")
                             pass
                     else:
                         error_count += 1
