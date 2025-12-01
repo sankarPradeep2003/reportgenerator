@@ -590,7 +590,7 @@ async def open_and_login_with_playwright(
                                 # Keep only last 50 files (to support batch processing)
                                 if len(RECENT_FILE_IDS) > 50:
                                     RECENT_FILE_IDS.pop()
-                                logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                                logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
                                 
                                 # Store file_id for later retrieval
                                 if not hasattr(open_and_login_with_playwright, '_last_file_id'):
@@ -865,7 +865,7 @@ async def process_single_course_in_session(
                 )
                 await shareable_option.first.wait_for(state="visible", timeout=5000)
                 await shareable_option.first.click()
-                await page.wait_for_timeout(90000)
+                await page.wait_for_timeout(1000)
 
                 completed_label = page.locator(
                     "span.ui-multiselect-label.ui-corner-all"
@@ -957,7 +957,7 @@ async def process_single_course_in_session(
                         # Keep only last 50 files (to support batch processing)
                         if len(RECENT_FILE_IDS) > 50:
                             RECENT_FILE_IDS.pop()
-                        logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
+                        logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
                     
                     # Close dialogs after download - EXACT same code
                     await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
