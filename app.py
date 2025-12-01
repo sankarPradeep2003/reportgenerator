@@ -747,71 +747,112 @@ async def process_single_course_in_session(
     very_short_timeout = 10000 if is_render_env else 5000
     
     try:
+        logger.info(f"📍 Starting process_single_course_in_session for: {course_query} - {test_query}")
+        logger.info(f"🔧 Environment check: is_render_env={is_render_env}, download_dir={download_dir}")
+        logger.info(f"⏱️ Timeouts: base={base_timeout}ms, short={short_timeout}ms, very_short={very_short_timeout}ms")
+        
+        # Check if page is still valid
+        try:
+            page_url = page.url
+            logger.info(f"🌐 Current page URL: {page_url}")
+        except Exception as page_check_exc:
+            logger.error(f"❌ Page is not valid: {page_check_exc}")
+            return False, f"Page is not valid: {page_check_exc}"
+        
         # Use EXACT same flow from open_and_login_with_playwright starting from course search
         # If a course query was provided, focus search and type it
         if (course_query or "").strip():
+            logger.info(f"🔍 Step 1: Searching for course: {course_query}")
             # Wait a bit longer on Render for page to be ready
             if is_render_env:
+                logger.info("⏳ Waiting 3s for page to be ready (Render)...")
                 await page.wait_for_timeout(3000)
             search_sel = "input[placeholder='Enter course name to search']"
             try:
+                logger.info(f"🔍 Step 1.1: Waiting for search input (timeout: {base_timeout}ms)...")
                 await page.wait_for_selector(search_sel, state="visible", timeout=base_timeout)
+                logger.info("✅ Search input found")
+                logger.info(f"🔍 Step 1.2: Clicking and filling search input...")
                 await page.click(search_sel)
                 await page.fill(search_sel, course_query.strip())
                 # Submit with Enter to trigger search
+                logger.info(f"🔍 Step 1.3: Submitting search with Enter...")
                 await page.press(search_sel, "Enter")
                 
                 # Wait for search results to appear and click on the course row
                 try:
+                    logger.info(f"🔍 Step 1.4: Waiting for search results table (timeout: {short_timeout}ms)...")
                     # Wait for the results table to appear
                     await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=short_timeout)
+                    logger.info("✅ Search results table found")
                     # Additional wait for table to fully render (longer on Render)
                     wait_time = 5000 if is_render_env else 2000
+                    logger.info(f"⏳ Waiting {wait_time}ms for table to render...")
                     await page.wait_for_timeout(wait_time)
                     
                     # Try to click the row containing the course name (partial match)
+                    logger.info(f"🔍 Step 1.5: Looking for course row to click...")
                     course_row_clicked = False
                     try:
                         # Look for a row containing the course name text
                         course_row = page.locator("tbody.ui-datatable-data tr").filter(has_text=course_query.strip())
+                        logger.info(f"🔍 Step 1.5.1: Waiting for matching course row (timeout: {short_timeout}ms)...")
                         await course_row.first.wait_for(state="visible", timeout=short_timeout)
+                        logger.info("✅ Matching course row found, clicking...")
                         await course_row.first.click()
                         course_row_clicked = True
-                    except Exception:
+                        logger.info("✅ Course row clicked successfully")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to click matching course row: {e}")
                         pass
                     
                     # Fallback: Click the first result row if specific match failed
                     if not course_row_clicked:
+                        logger.info("🔄 Fallback 1: Trying to click first even row...")
                         try:
                             await page.locator("tbody.ui-datatable-data tr.ui-datatable-even").first.click()
                             course_row_clicked = True
-                        except Exception:
+                            logger.info("✅ Fallback 1: First even row clicked")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Fallback 1 failed: {e}")
                             pass
                     
                     # Fallback: Click anywhere on the first row
                     if not course_row_clicked:
+                        logger.info("🔄 Fallback 2: Trying to click first row...")
                         try:
                             await page.locator("tbody.ui-datatable-data tr").first.click()
                             course_row_clicked = True
-                        except Exception:
+                            logger.info("✅ Fallback 2: First row clicked")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Fallback 2 failed: {e}")
                             pass
                     
                     # After clicking the course row, wait for navigation to course page
                     if course_row_clicked:
+                        logger.info("🔍 Step 1.6: Waiting for navigation to course page...")
                         try:
                             await page.wait_for_load_state("networkidle", timeout=short_timeout)
+                            logger.info("✅ Navigation complete")
                             # Additional wait on Render
                             if is_render_env:
+                                logger.info("⏳ Additional 3s wait for Render...")
                                 await page.wait_for_timeout(3000)
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"⚠️ Navigation wait failed (continuing anyway): {e}")
                             pass
-                except Exception:
+                    else:
+                        logger.error("❌ Failed to click any course row")
+                except Exception as e:
+                    logger.error(f"❌ Error waiting for search results: {e}", exc_info=True)
                     pass
-            except Exception:
+            except Exception as e:
+                logger.error(f"❌ Error in course search: {e}", exc_info=True)
                 pass
 
         # If a module was supplied, click the matching module in the sidebar - EXACT same code
         if (module_query or "").strip():
+            logger.info(f"🔍 Step 2: Looking for module: {module_query}")
             target_module = " ".join(module_query.strip().split())
             try:
                 sidebar = page.locator("div.ui-g-3.sidedivpre")
@@ -821,11 +862,15 @@ async def process_single_course_in_session(
 
                 pattern_module = _re_mod.compile(_re_mod.escape(target_module), flags=_re_mod.IGNORECASE)
                 matching_module = module_entries.filter(has_text=pattern_module)
+                logger.info("🔍 Step 2.1: Clicking matching module...")
                 await matching_module.first.click()
+                logger.info("✅ Module clicked")
                 # Longer wait on Render
                 wait_time = 15000 if is_render_env else 10000
+                logger.info(f"⏳ Waiting {wait_time}ms for module to load...")
                 await page.wait_for_timeout(wait_time)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"⚠️ Error clicking module: {e}")
                 pass
 
         # If a specific test should be interacted with, search the preview page - EXACT same code
@@ -1368,14 +1413,21 @@ async def process_multiple_reports(
                 
                 try:
                     logger.info(f"🔄 Processing course {idx}/{len(csv_rows)}: {course_query} - {test_query}")
-                    ok, msg = await process_single_course_in_session(
-                        page,
-                        download_dir,
-                        course_query,
-                        module_query,
-                        test_query,
-                        filename_choice=filename_choice,
-                    )
+                    logger.info(f"📞 About to call process_single_course_in_session...")
+                    logger.info(f"📋 Parameters: course={course_query}, module={module_query}, test={test_query}, download_dir={download_dir}")
+                    try:
+                        ok, msg = await process_single_course_in_session(
+                            page,
+                            download_dir,
+                            course_query,
+                            module_query,
+                            test_query,
+                            filename_choice=filename_choice,
+                        )
+                        logger.info(f"📞 process_single_course_in_session returned: ok={ok}, msg={msg[:100] if msg else 'None'}")
+                    except Exception as func_exc:
+                        logger.error(f"❌ Exception INSIDE process_single_course_in_session: {func_exc}", exc_info=True)
+                        ok, msg = False, f"Exception in process_single_course_in_session: {func_exc}"
                     
                     if ok:
                         success_count += 1
