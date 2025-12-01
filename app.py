@@ -980,39 +980,39 @@ async def process_single_course_in_session(
                     
                     # Always try to add file if it exists (for Render deployment)
                     if file_exists and file_size > 0:
-                                try:
-                                    logger.info(f"📦 Storing file in memory: {target_path.name} ({file_size} bytes)")
-                                    file_id = secrets.token_urlsafe(16)
-                                    with open(target_path, "rb") as f:
-                                        file_data = f.read()
-                                    
-                                    if len(file_data) > 0:
-                                        DOWNLOADED_FILES[file_id] = {
-                                            "data": file_data,
-                                            "filename": target_path.name,
-                                            "created": time.time()
-                                        }
-                                        # Clean up old files (older than 1 hour)
-                                        current_time = time.time()
-                                        for k in list(DOWNLOADED_FILES.keys()):
-                                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                                del DOWNLOADED_FILES[k]
-                                        logger.info(f"💾 File stored in DOWNLOADED_FILES: ID={file_id}, filename={target_path.name}, size={len(file_data)} bytes, total files={len(DOWNLOADED_FILES)}")
-                                        
-                                        # Add to recent files for notification
-                                        RECENT_FILE_IDS.insert(0, {
-                                            "file_id": file_id,
-                                            "filename": target_path.name,
-                                            "created": time.time()
-                                        })
-                                        # Keep only last 50 files (to support batch processing)
-                                        if len(RECENT_FILE_IDS) > 50:
-                                            RECENT_FILE_IDS.pop()
-                                        logger.info(f"🔔 FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
-                                    else:
-                                        logger.warning(f"⚠️ File {target_path.name} is empty after reading, not adding to notification")
-                                except Exception as e:
-                                    logger.error(f"❌ Error storing file {target_path.name} for notification: {e}", exc_info=True)
+                        try:
+                            logger.info(f"📦 Storing file in memory: {target_path.name} ({file_size} bytes)")
+                            file_id = secrets.token_urlsafe(16)
+                            with open(target_path, "rb") as f:
+                                file_data = f.read()
+                            
+                            if len(file_data) > 0:
+                                DOWNLOADED_FILES[file_id] = {
+                                    "data": file_data,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                }
+                                # Clean up old files (older than 1 hour)
+                                current_time = time.time()
+                                for k in list(DOWNLOADED_FILES.keys()):
+                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                        del DOWNLOADED_FILES[k]
+                                logger.info(f"💾 File stored in DOWNLOADED_FILES: ID={file_id}, filename={target_path.name}, size={len(file_data)} bytes, total files={len(DOWNLOADED_FILES)}")
+                                
+                                # Add to recent files for notification
+                                RECENT_FILE_IDS.insert(0, {
+                                    "file_id": file_id,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                })
+                                # Keep only last 50 files (to support batch processing)
+                                if len(RECENT_FILE_IDS) > 50:
+                                    RECENT_FILE_IDS.pop()
+                                logger.info(f"🔔 FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                            else:
+                                logger.warning(f"⚠️ File {target_path.name} is empty after reading, not adding to notification")
+                        except Exception as e:
+                            logger.error(f"❌ Error storing file {target_path.name} for notification: {e}", exc_info=True)
                     else:
                         logger.warning(f"⚠️ File not added to notification: exists={file_exists}, size={file_size}, path={target_path}, download_dir={download_dir}")
                     
@@ -1238,6 +1238,7 @@ async def process_multiple_reports(
                     continue
                 
                 try:
+                    logger.info(f"🔄 Processing course {idx}/{len(csv_rows)}: {course_query} - {test_query}")
                     ok, msg = await process_single_course_in_session(
                         page,
                         download_dir,
@@ -1250,6 +1251,7 @@ async def process_multiple_reports(
                     if ok:
                         success_count += 1
                         results.append(f"Row {idx}: Success - {course_query} - {test_query}")
+                        logger.info(f"✅ Course {idx} completed successfully. Current RECENT_FILE_IDS count: {len(RECENT_FILE_IDS)}, DOWNLOADED_FILES count: {len(DOWNLOADED_FILES)}")
                         
                         # Go back to Courses page for next iteration
                         await page.wait_for_timeout(2000)
@@ -1263,21 +1265,30 @@ async def process_multiple_reports(
                     else:
                         error_count += 1
                         results.append(f"Row {idx}: Failed - {msg}")
+                        logger.warning(f"❌ Course {idx} failed: {msg}")
                     
                     await page.wait_for_timeout(1000)
                     
                 except Exception as exc:  # noqa: BLE001
                     error_count += 1
                     results.append(f"Row {idx}: Error - {exc}")
+                    logger.error(f"❌ Exception processing course {idx}: {exc}", exc_info=True)
             
             # Close browser after all rows are processed
             await browser.close()
+            
+            # Log final state
+            logger.info(f"🏁 Batch processing completed. Final state: RECENT_FILE_IDS={len(RECENT_FILE_IDS)}, DOWNLOADED_FILES={len(DOWNLOADED_FILES)}")
+            if len(RECENT_FILE_IDS) > 0:
+                logger.info(f"📋 Files in notification list: {[f['filename'] for f in RECENT_FILE_IDS[:5]]}")
     
     except Exception as exc:  # noqa: BLE001
         error_count += len(csv_rows) - success_count
         results.append(f"Critical error: {exc}")
+        logger.error(f"❌ Critical error in batch processing: {exc}", exc_info=True)
     
     summary = f"Processed {len(csv_rows)} rows: {success_count} successful, {error_count} failed"
+    logger.info(f"📊 Batch processing summary: {summary}")
     return success_count > 0, summary + "\n" + "\n".join(results)
 
 
