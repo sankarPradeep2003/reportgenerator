@@ -564,33 +564,57 @@ async def open_and_login_with_playwright(
                                 target_path = download_dir / suggested_name
                             await download.save_as(str(target_path))
                             
+                            # Wait a bit for file to be fully written and retry if needed
+                            file_exists = False
+                            for retry in range(5):
+                                await page.wait_for_timeout(500)
+                                if target_path.exists() and target_path.stat().st_size > 0:
+                                    file_exists = True
+                                    break
+                                logger.debug(f"Waiting for file {target_path.name} to exist (retry {retry+1}/5)")
+                            
                             # On Render, store file info for download
-                            if os.environ.get("RENDER") and target_path.exists():
-                                file_id = secrets.token_urlsafe(16)
-                                with open(target_path, "rb") as f:
-                                    file_data = f.read()
-                                DOWNLOADED_FILES[file_id] = {
-                                    "data": file_data,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                }
-                                # Clean up old files (older than 1 hour)
-                                current_time = time.time()
-                                for k in list(DOWNLOADED_FILES.keys()):
-                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                        del DOWNLOADED_FILES[k]
-                                logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
-                                
-                                # Add to recent files for notification
-                                RECENT_FILE_IDS.insert(0, {
-                                    "file_id": file_id,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                })
-                                # Keep only last 50 files (to support batch processing)
-                                if len(RECENT_FILE_IDS) > 50:
-                                    RECENT_FILE_IDS.pop()
-                                logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                            # Check if we're on Render (either by env var or by checking if we're using /tmp/downloads)
+                            is_render = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
+                            file_size = target_path.stat().st_size if target_path.exists() else 0
+                            logger.info(f"Download completed: path={target_path}, exists={file_exists}, size={file_size}, RENDER={is_render}, download_dir={download_dir}")
+                            
+                            # Always try to add file if it exists (for Render deployment)
+                            if file_exists and file_size > 0:
+                                try:
+                                    file_id = secrets.token_urlsafe(16)
+                                    with open(target_path, "rb") as f:
+                                        file_data = f.read()
+                                    
+                                    if len(file_data) > 0:
+                                        DOWNLOADED_FILES[file_id] = {
+                                            "data": file_data,
+                                            "filename": target_path.name,
+                                            "created": time.time()
+                                        }
+                                        # Clean up old files (older than 1 hour)
+                                        current_time = time.time()
+                                        for k in list(DOWNLOADED_FILES.keys()):
+                                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                                del DOWNLOADED_FILES[k]
+                                        logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}, size: {len(file_data)} bytes")
+                                        
+                                        # Add to recent files for notification
+                                        RECENT_FILE_IDS.insert(0, {
+                                            "file_id": file_id,
+                                            "filename": target_path.name,
+                                            "created": time.time()
+                                        })
+                                        # Keep only last 50 files (to support batch processing)
+                                        if len(RECENT_FILE_IDS) > 50:
+                                            RECENT_FILE_IDS.pop()
+                                        logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                                    else:
+                                        logger.warning(f"File {target_path.name} is empty, not adding to notification")
+                                except Exception as e:
+                                    logger.error(f"Error storing file {target_path.name} for notification: {e}", exc_info=True)
+                            else:
+                                logger.warning(f"File not added to notification: exists={file_exists}, size={file_size}, path={target_path}")
                                 
                                 # Store file_id for later retrieval
                                 if not hasattr(open_and_login_with_playwright, '_last_file_id'):
@@ -931,33 +955,57 @@ async def process_single_course_in_session(
                         target_path = download_dir / suggested_name
                     await download.save_as(str(target_path))
                     
+                    # Wait a bit for file to be fully written and retry if needed
+                    file_exists = False
+                    for retry in range(5):
+                        await page.wait_for_timeout(500)
+                        if target_path.exists() and target_path.stat().st_size > 0:
+                            file_exists = True
+                            break
+                        logger.debug(f"Waiting for file {target_path.name} to exist (retry {retry+1}/5)")
+                    
                     # On Render, store file info for download (same as in open_and_login_with_playwright)
-                    if os.environ.get("RENDER") and target_path.exists():
-                        file_id = secrets.token_urlsafe(16)
-                        with open(target_path, "rb") as f:
-                            file_data = f.read()
-                        DOWNLOADED_FILES[file_id] = {
-                            "data": file_data,
-                            "filename": target_path.name,
-                            "created": time.time()
-                        }
-                        # Clean up old files (older than 1 hour)
-                        current_time = time.time()
-                        for k in list(DOWNLOADED_FILES.keys()):
-                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                del DOWNLOADED_FILES[k]
-                        logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
-                        
-                        # Add to recent files for notification
-                        RECENT_FILE_IDS.insert(0, {
-                            "file_id": file_id,
-                            "filename": target_path.name,
-                            "created": time.time()
-                        })
-                        # Keep only last 50 files (to support batch processing)
-                        if len(RECENT_FILE_IDS) > 50:
-                            RECENT_FILE_IDS.pop()
-                        logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                    # Check if we're on Render (either by env var or by checking if we're using /tmp/downloads)
+                    is_render = os.environ.get("RENDER") or str(download_dir).startswith("/tmp")
+                    file_size = target_path.stat().st_size if file_exists else 0
+                    logger.info(f"Download completed: path={target_path}, exists={file_exists}, size={file_size}, RENDER={is_render}, download_dir={download_dir}")
+                    
+                    # Always try to add file if it exists (for Render deployment)
+                    if file_exists and file_size > 0:
+                        try:
+                            file_id = secrets.token_urlsafe(16)
+                            with open(target_path, "rb") as f:
+                                file_data = f.read()
+                            
+                            if len(file_data) > 0:
+                                DOWNLOADED_FILES[file_id] = {
+                                    "data": file_data,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                }
+                                # Clean up old files (older than 1 hour)
+                                current_time = time.time()
+                                for k in list(DOWNLOADED_FILES.keys()):
+                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                        del DOWNLOADED_FILES[k]
+                                logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}, size: {len(file_data)} bytes")
+                                
+                                # Add to recent files for notification
+                                RECENT_FILE_IDS.insert(0, {
+                                    "file_id": file_id,
+                                    "filename": target_path.name,
+                                    "created": time.time()
+                                })
+                                # Keep only last 50 files (to support batch processing)
+                                if len(RECENT_FILE_IDS) > 50:
+                                    RECENT_FILE_IDS.pop()
+                                logger.info(f"✅ FILE READY FOR NOTIFICATION: {target_path.name} (ID: {file_id[:12]}...) - Added to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                            else:
+                                logger.warning(f"File {target_path.name} is empty, not adding to notification")
+                        except Exception as e:
+                            logger.error(f"Error storing file {target_path.name} for notification: {e}", exc_info=True)
+                    else:
+                        logger.warning(f"File not added to notification: RENDER={is_render}, exists={file_exists}, path={target_path}")
                     
                     # Close dialogs after download - EXACT same code
                     await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
