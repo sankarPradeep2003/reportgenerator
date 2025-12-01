@@ -247,8 +247,10 @@ async def open_and_login_with_playwright(
             page = await context.new_page()
             
             # Navigate and wait for redirects to complete
+            logger.info(f"Step 1: Navigating to URL: {url}")
             await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_load_state("networkidle")
+            logger.info("Step 2: Page loaded successfully")
             
             # Wait for the Angular form fields to be available (using your exact selectors)
             email_selector = 'input[id="emailAddress"]'
@@ -256,18 +258,23 @@ async def open_and_login_with_playwright(
             
             try:
                 # Wait for email field to be visible and ready
+                logger.info("Step 3: Waiting for login form to appear...")
                 await page.wait_for_selector(email_selector, state="visible", timeout=30000)
                 await page.fill(email_selector, username)
+                logger.info(f"Step 4: Email field filled with: {username}")
                 
                 # Wait for password field to be visible and ready
                 await page.wait_for_selector(password_selector, state="visible", timeout=10000)
                 await page.fill(password_selector, password)
+                logger.info("Step 5: Password field filled")
                 
                 # Try to find and click the Login button using your markup
+                logger.info("Step 6: Attempting to click Login button...")
                 clicked = False
                 try:
                     await page.get_by_role("button", name="Login").click()
                     clicked = True
+                    logger.info("Step 7: Login button clicked (method 1: role button)")
                 except Exception:
                     pass
 
@@ -275,6 +282,7 @@ async def open_and_login_with_playwright(
                     try:
                         await page.locator("button[label='Login']").click()
                         clicked = True
+                        logger.info("Step 7: Login button clicked (method 2: label)")
                     except Exception:
                         pass
 
@@ -282,6 +290,7 @@ async def open_and_login_with_playwright(
                     try:
                         await page.locator("button.form__button:has-text('Login')").click()
                         clicked = True
+                        logger.info("Step 7: Login button clicked (method 3: form button)")
                     except Exception:
                         pass
 
@@ -289,27 +298,33 @@ async def open_and_login_with_playwright(
                     try:
                         await page.click("button[type='submit']")
                         clicked = True
+                        logger.info("Step 7: Login button clicked (method 4: submit button)")
                     except Exception:
                         # If still not found, press Enter in password field
                         await page.press(password_selector, "Enter")
+                        logger.info("Step 7: Login attempted (method 5: Enter key)")
                 
                 # Wait for navigation and then attempt to select the Courses tool
+                logger.info("Step 8: Waiting for login to complete and page to load...")
                 try:
                     await page.wait_for_load_state("networkidle", timeout=60000)
                     # Additional wait for Angular to render the menu items
                     await page.wait_for_timeout(2000)
+                    logger.info("Step 9: Login successful, page loaded")
                 except Exception:
-                    pass
+                    logger.warning("Step 9: Timeout waiting for page load after login")
 
                 # Wait for the left-menu container and then click the Courses option
+                logger.info("Step 10: Looking for Courses menu...")
                 course_clicked = False
                 
                 # First, wait for the left-menu container to be visible
                 try:
                     await page.wait_for_selector("div.left-menu", state="visible", timeout=30000)
                     await page.wait_for_timeout(1000)  # Additional wait for menu items to render
+                    logger.info("Step 11: Left menu found")
                 except Exception:
-                    pass
+                    logger.warning("Step 11: Left menu not found")
 
                 # Primary: Wait for and click Courses within the left-menu using ptooltip attribute
                 try:
@@ -317,7 +332,9 @@ async def open_and_login_with_playwright(
                     await course_locator.wait_for(state="visible", timeout=30000)
                     await course_locator.first.click()
                     course_clicked = True
+                    logger.info("Step 12: ✓ Courses menu clicked successfully")
                 except Exception:
+                    logger.warning("Step 12: Failed to click Courses (method 1)")
                     pass
 
                 # Fallback 1: Click via class and icon within left-menu
@@ -329,7 +346,9 @@ async def open_and_login_with_playwright(
                         course_locator = page.locator("div.left-menu li.each-tool[ptooltip='Courses']")
                         await course_locator.first.click()
                         course_clicked = True
+                        logger.info("Step 12: ✓ Courses menu clicked successfully (fallback method 1)")
                     except Exception:
+                        logger.warning("Step 12: Failed to click Courses (fallback method 1)")
                         pass
 
                 # Fallback 2: Click the span inside the li within left-menu
@@ -339,7 +358,9 @@ async def open_and_login_with_playwright(
                         await course_locator.wait_for(state="visible", timeout=10000)
                         await course_locator.first.click()
                         course_clicked = True
+                        logger.info("Step 12: ✓ Courses menu clicked successfully (fallback method 2)")
                     except Exception:
+                        logger.warning("Step 12: Failed to click Courses (fallback method 2)")
                         pass
 
                 # Fallback 3: Try clicking by text content within left-menu
@@ -348,11 +369,17 @@ async def open_and_login_with_playwright(
                         course_locator = page.locator("div.left-menu").get_by_role("listitem").filter(has_text="Courses")
                         await course_locator.first.click()
                         course_clicked = True
+                        logger.info("Step 12: ✓ Courses menu clicked successfully (fallback method 3)")
                     except Exception:
+                        logger.warning("Step 12: Failed to click Courses (fallback method 3)")
                         pass
+                
+                if not course_clicked:
+                    logger.error("Step 12: ✗ Failed to click Courses menu - all methods failed")
 
                 # If a course query was provided, focus search and type it
                 if course_clicked and (course_query or "").strip():
+                    logger.info(f"Step 13: Searching for course: '{course_query.strip()}'")
                     search_sel = "input[placeholder='Enter course name to search']"
                     try:
                         await page.wait_for_selector(search_sel, state="visible", timeout=20000)
@@ -360,6 +387,7 @@ async def open_and_login_with_playwright(
                         await page.fill(search_sel, course_query.strip())
                         # Submit with Enter to trigger search
                         await page.press(search_sel, "Enter")
+                        logger.info(f"Step 14: ✓ Course search performed for: '{course_query.strip()}'")
                         
                         # Wait for search results to appear and click on the course row
                         try:
@@ -383,7 +411,9 @@ async def open_and_login_with_playwright(
                                 try:
                                     await page.locator("tbody.ui-datatable-data tr.ui-datatable-even").first.click()
                                     course_row_clicked = True
+                                    logger.info("Step 17: ✓ Course row clicked (fallback: first even row)")
                                 except Exception:
+                                    logger.warning("Step 17: Failed to click first even row")
                                     pass
                             
                             # Fallback: Click anywhere on the first row
@@ -391,15 +421,22 @@ async def open_and_login_with_playwright(
                                 try:
                                     await page.locator("tbody.ui-datatable-data tr").first.click()
                                     course_row_clicked = True
+                                    logger.info("Step 17: ✓ Course row clicked (fallback: first row)")
                                 except Exception:
+                                    logger.warning("Step 17: Failed to click first row")
                                     pass
                             
                             # After clicking the course row, wait for navigation to course page
                             if course_row_clicked:
+                                logger.info("Step 18: Waiting for course page to load...")
                                 try:
                                     await page.wait_for_load_state("networkidle", timeout=10000)
+                                    logger.info("Step 19: ✓ Course page loaded successfully")
                                 except Exception:
+                                    logger.warning("Step 19: Timeout waiting for course page to load")
                                     pass
+                            else:
+                                logger.error("Step 17: ✗ Failed to click any course row")
                         except Exception:
                             pass
                     except Exception:
@@ -408,6 +445,7 @@ async def open_and_login_with_playwright(
                 # If a module was supplied, click the matching module in the sidebar
                 if (module_query or "").strip():
                     target_module = " ".join(module_query.strip().split())
+                    logger.info(f"Step 20: Searching for module: '{target_module}'")
                     try:
                         sidebar = page.locator("div.ui-g-3.sidedivpre")
                         module_entries = sidebar.locator("span.modulelist")
@@ -417,8 +455,11 @@ async def open_and_login_with_playwright(
                         pattern_module = _re_mod.compile(_re_mod.escape(target_module), flags=_re_mod.IGNORECASE)
                         matching_module = module_entries.filter(has_text=pattern_module)
                         await matching_module.first.click()
+                        logger.info(f"Step 21: ✓ Module selected: '{target_module}'")
                         await page.wait_for_timeout(10000)
-                    except Exception:
+                        logger.info("Step 22: Waiting for module content to load...")
+                    except Exception as e:
+                        logger.error(f"Step 21: ✗ Failed to select module '{target_module}': {e}")
                         pass
 
                 # If a specific test should be interacted with, search the preview page
@@ -438,10 +479,12 @@ async def open_and_login_with_playwright(
                 
                 if (test_query or "").strip():
                     target_test = " ".join(test_query.strip().split())
+                    logger.info(f"Step 23: Searching for test: '{target_test}'")
                     try:
                         main_container = page.locator("div.ui-g-9.maindivpre")
                         await main_container.wait_for(state="visible", timeout=5000)
                         test_cards = main_container.locator("div.ui-g-12.moduletest")
+                        logger.info("Step 24: Test cards container found")
 
                         pattern = _re.compile(_re.escape(target_test), flags=_re.IGNORECASE)
                         matching_card = test_cards.filter(has_text=pattern)
@@ -449,6 +492,7 @@ async def open_and_login_with_playwright(
                         await matching_card.first.wait_for(state="visible", timeout=5000)
                         card = matching_card.first
                         await card.scroll_into_view_if_needed()
+                        logger.info(f"Step 25: ✓ Test identified: '{target_test}'")
 
                         completed_counter = card.locator(
                             "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
@@ -456,7 +500,9 @@ async def open_and_login_with_playwright(
                         await completed_counter.first.wait_for(state="visible", timeout=5000)
                         await completed_counter.first.click()
                         test_clicked = True
-                    except Exception:
+                        logger.info(f"Step 26: ✓ Test clicked: '{target_test}'")
+                    except Exception as e:
+                        logger.error(f"Step 25-26: ✗ Failed to identify/click test '{target_test}': {e}")
                         pass
 
                 if test_clicked:
@@ -505,12 +551,14 @@ async def open_and_login_with_playwright(
                         ).filter(has_text="Completed").first
                         await completed_label.wait_for(state="visible", timeout=5000)
                         await completed_label.click()
+                        logger.info("Step 33: ✓ 'Completed' filter clicked")
 
                         multiselect_checkbox = page.locator(
                             "div.ui-multiselect-panel div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                         ).first
                         await multiselect_checkbox.wait_for(state="visible", timeout=5000)
                         await multiselect_checkbox.click()
+                        logger.info("Step 34: ✓ Completed checkbox selected")
 
                         download_results = (
                             page.locator("span", has_text="Download results").first
@@ -518,6 +566,7 @@ async def open_and_login_with_playwright(
                         await download_results.wait_for(state="visible", timeout=10000)
                         await download_results.scroll_into_view_if_needed()
                         await download_results.click()
+                        logger.info("Step 35: ✓ 'Download results' clicked")
 
                         # Select Excel option instead of CSV
                         excel_option_clicked = False
@@ -562,35 +611,51 @@ async def open_and_login_with_playwright(
                                 target_path = download_dir / f"{sanitized_filename}{extension}"
                             else:
                                 target_path = download_dir / suggested_name
+                            logger.info(f"Step 40: Saving file as: {target_path.name}")
                             await download.save_as(str(target_path))
+                            logger.info(f"Step 41: ✓ File saved: {target_path.name}")
+                            
+                            # Wait a bit for file to be fully written
+                            await page.wait_for_timeout(4000)
                             
                             # On Render, store file info for download
-                            if os.environ.get("RENDER") and target_path.exists():
-                                file_id = secrets.token_urlsafe(16)
-                                with open(target_path, "rb") as f:
-                                    file_data = f.read()
-                                DOWNLOADED_FILES[file_id] = {
-                                    "data": file_data,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                }
-                                # Clean up old files (older than 1 hour)
-                                current_time = time.time()
-                                for k in list(DOWNLOADED_FILES.keys()):
-                                    if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                        del DOWNLOADED_FILES[k]
-                                logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                            if os.environ.get("RENDER"):
+                                # Check if file exists, retry if needed
+                                max_retries = 5
+                                retry_count = 0
+                                while not target_path.exists() and retry_count < max_retries:
+                                    await page.wait_for_timeout(1000)
+                                    retry_count += 1
+                                    logger.info(f"Waiting for file to exist: {target_path.name}, retry {retry_count}/{max_retries}")
                                 
-                                # Add to recent files for notification
-                                RECENT_FILE_IDS.insert(0, {
-                                    "file_id": file_id,
-                                    "filename": target_path.name,
-                                    "created": time.time()
-                                })
-                                # Keep only last 10 files
-                                if len(RECENT_FILE_IDS) > 10:
-                                    RECENT_FILE_IDS.pop()
-                                logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                                if target_path.exists():
+                                    file_id = secrets.token_urlsafe(16)
+                                    with open(target_path, "rb") as f:
+                                        file_data = f.read()
+                                    DOWNLOADED_FILES[file_id] = {
+                                        "data": file_data,
+                                        "filename": target_path.name,
+                                        "created": time.time()
+                                    }
+                                    # Clean up old files (older than 1 hour)
+                                    current_time = time.time()
+                                    for k in list(DOWNLOADED_FILES.keys()):
+                                        if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                            del DOWNLOADED_FILES[k]
+                                    logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                                    
+                                    # Add to recent files for notification
+                                    RECENT_FILE_IDS.insert(0, {
+                                        "file_id": file_id,
+                                        "filename": target_path.name,
+                                        "created": time.time()
+                                    })
+                                    # Keep only last 10 files
+                                    if len(RECENT_FILE_IDS) > 10:
+                                        RECENT_FILE_IDS.pop()
+                                    logger.info(f"Added file to notification list. Total recent files: {len(RECENT_FILE_IDS)}")
+                                else:
+                                    logger.warning(f"File not found after download: {target_path}. File may not have been saved correctly.")
                                 
                                 # Store file_id for later retrieval
                                 if not hasattr(open_and_login_with_playwright, '_last_file_id'):
@@ -717,9 +782,13 @@ async def process_single_course_in_session(
 ) -> tuple[bool, str]:
     """Process a single course/module/test within an existing browser session (assumes already on courses page) - uses EXACT same flow as single course"""
     try:
+        batch_prefix = "[BATCH] " if is_batch else ""
+        logger.info(f"{batch_prefix}Starting to process course: '{course_query}', module: '{module_query}', test: '{test_query}'")
+        
         # Use EXACT same flow from open_and_login_with_playwright starting from course search
         # If a course query was provided, focus search and type it
         if (course_query or "").strip():
+            logger.info(f"{batch_prefix}Step 1: Searching for course: '{course_query.strip()}'")
             search_sel = "input[placeholder='Enter course name to search']"
             try:
                 await page.wait_for_selector(search_sel, state="visible", timeout=20000)
@@ -727,12 +796,15 @@ async def process_single_course_in_session(
                 await page.fill(search_sel, course_query.strip())
                 # Submit with Enter to trigger search
                 await page.press(search_sel, "Enter")
+                logger.info(f"{batch_prefix}Step 2: ✓ Course search performed for: '{course_query.strip()}'")
                 
                 # Wait for search results to appear and click on the course row
                 try:
+                    logger.info(f"{batch_prefix}Step 3: Waiting for course search results...")
                     # Wait for the results table to appear
                     await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=10000)
                     await page.wait_for_timeout(2000)  # Additional wait for table to fully render
+                    logger.info(f"{batch_prefix}Step 4: ✓ Course search results displayed")
                     
                     # Try to click the row containing the course name (partial match)
                     course_row_clicked = False
@@ -742,7 +814,9 @@ async def process_single_course_in_session(
                         await course_row.first.wait_for(state="visible", timeout=10000)
                         await course_row.first.click()
                         course_row_clicked = True
+                        logger.info(f"{batch_prefix}Step 5: ✓ Course row clicked: '{course_query.strip()}'")
                     except Exception:
+                        logger.warning(f"{batch_prefix}Step 5: Failed to click course row by text match")
                         pass
                     
                     # Fallback: Click the first result row if specific match failed
@@ -750,7 +824,9 @@ async def process_single_course_in_session(
                         try:
                             await page.locator("tbody.ui-datatable-data tr.ui-datatable-even").first.click()
                             course_row_clicked = True
+                            logger.info(f"{batch_prefix}Step 5: ✓ Course row clicked (fallback: first even row)")
                         except Exception:
+                            logger.warning(f"{batch_prefix}Step 5: Failed to click first even row")
                             pass
                     
                     # Fallback: Click anywhere on the first row
@@ -758,23 +834,33 @@ async def process_single_course_in_session(
                         try:
                             await page.locator("tbody.ui-datatable-data tr").first.click()
                             course_row_clicked = True
+                            logger.info(f"{batch_prefix}Step 5: ✓ Course row clicked (fallback: first row)")
                         except Exception:
+                            logger.warning(f"{batch_prefix}Step 5: Failed to click first row")
                             pass
                     
                     # After clicking the course row, wait for navigation to course page
                     if course_row_clicked:
+                        logger.info(f"{batch_prefix}Step 6: Waiting for course page to load...")
                         try:
                             await page.wait_for_load_state("networkidle", timeout=10000)
+                            logger.info(f"{batch_prefix}Step 7: ✓ Course page loaded successfully")
                         except Exception:
+                            logger.warning(f"{batch_prefix}Step 7: Timeout waiting for course page to load")
                             pass
-                except Exception:
+                    else:
+                        logger.error(f"{batch_prefix}Step 5: ✗ Failed to click any course row")
+                except Exception as e:
+                    logger.error(f"{batch_prefix}Step 3-7: Error in course search/selection: {e}")
                     pass
-            except Exception:
+            except Exception as e:
+                logger.error(f"{batch_prefix}Step 1-2: Error in course search: {e}")
                 pass
 
         # If a module was supplied, click the matching module in the sidebar - EXACT same code
         if (module_query or "").strip():
             target_module = " ".join(module_query.strip().split())
+            logger.info(f"{batch_prefix}Step 8: Searching for module: '{target_module}'")
             try:
                 sidebar = page.locator("div.ui-g-3.sidedivpre")
                 module_entries = sidebar.locator("span.modulelist")
@@ -784,8 +870,11 @@ async def process_single_course_in_session(
                 pattern_module = _re_mod.compile(_re_mod.escape(target_module), flags=_re_mod.IGNORECASE)
                 matching_module = module_entries.filter(has_text=pattern_module)
                 await matching_module.first.click()
+                logger.info(f"{batch_prefix}Step 9: ✓ Module selected: '{target_module}'")
                 await page.wait_for_timeout(10000)
-            except Exception:
+                logger.info(f"{batch_prefix}Step 10: Waiting for module content to load...")
+            except Exception as e:
+                logger.error(f"{batch_prefix}Step 9: ✗ Failed to select module '{target_module}': {e}")
                 pass
 
         # If a specific test should be interacted with, search the preview page - EXACT same code
@@ -805,10 +894,12 @@ async def process_single_course_in_session(
         
         if (test_query or "").strip():
             target_test = " ".join(test_query.strip().split())
+            logger.info(f"{batch_prefix}Step 11: Searching for test: '{target_test}'")
             try:
                 main_container = page.locator("div.ui-g-9.maindivpre")
                 await main_container.wait_for(state="visible", timeout=5000)
                 test_cards = main_container.locator("div.ui-g-12.moduletest")
+                logger.info(f"{batch_prefix}Step 12: Test cards container found")
 
                 pattern = _re.compile(_re.escape(target_test), flags=_re.IGNORECASE)
                 matching_card = test_cards.filter(has_text=pattern)
@@ -816,6 +907,7 @@ async def process_single_course_in_session(
                 await matching_card.first.wait_for(state="visible", timeout=5000)
                 card = matching_card.first
                 await card.scroll_into_view_if_needed()
+                logger.info(f"{batch_prefix}Step 13: ✓ Test identified: '{target_test}'")
 
                 completed_counter = card.locator(
                     "div.confirmModal.st-count span.meta-data.ui-g-12.ui-g-nopad"
@@ -823,10 +915,13 @@ async def process_single_course_in_session(
                 await completed_counter.first.wait_for(state="visible", timeout=5000)
                 await completed_counter.first.click()
                 test_clicked = True
-            except Exception:
+                logger.info(f"{batch_prefix}Step 14: ✓ Test clicked: '{target_test}'")
+            except Exception as e:
+                logger.error(f"{batch_prefix}Step 13-14: ✗ Failed to identify/click test '{target_test}': {e}")
                 pass
 
         if test_clicked:
+            logger.info(f"{batch_prefix}Step 15: Test dialog opened, processing actions...")
             try:
                 await page.wait_for_load_state("networkidle", timeout=2000)
             except Exception:
@@ -838,6 +933,7 @@ async def process_single_course_in_session(
                 ).first
                 await checkbox.wait_for(state="visible", timeout=10000)
                 await checkbox.click()
+                logger.info(f"{batch_prefix}Step 16: ✓ Checkbox selected")
 
                 select_all = (
                     page.locator("span.text-underline")
@@ -847,7 +943,9 @@ async def process_single_course_in_session(
                 try:
                     await select_all.wait_for(state="visible", timeout=3000)
                     await select_all.click()
+                    logger.info(f"{batch_prefix}Step 17: ✓ 'Select all' clicked")
                 except Exception:
+                    logger.warning(f"{batch_prefix}Step 17: 'Select all' button not found or not clicked")
                     pass
 
                 action_label = (
@@ -860,25 +958,30 @@ async def process_single_course_in_session(
                     "xpath=ancestor::div[contains(@class, 'ui-dropdown')]"
                 )
                 await dropdown_container.first.click()
+                logger.info(f"{batch_prefix}Step 18: ✓ Action dropdown opened")
 
                 shareable_option = page.locator(
                     "li.ui-dropdown-item.ui-corner-all[aria-label='Generate Shareable Link']"
                 )
                 await shareable_option.first.wait_for(state="visible", timeout=5000)
                 await shareable_option.first.click()
+                logger.info(f"{batch_prefix}Step 19: ✓ 'Generate Shareable Link' selected, waiting for processing...")
                 await page.wait_for_timeout(90000)
+                logger.info(f"{batch_prefix}Step 20: ✓ Shareable link generation completed")
 
                 completed_label = page.locator(
                     "span.ui-multiselect-label.ui-corner-all"
                 ).filter(has_text="Completed").first
                 await completed_label.wait_for(state="visible", timeout=5000)
                 await completed_label.click()
+                logger.info(f"{batch_prefix}Step 21: ✓ 'Completed' filter clicked")
 
                 multiselect_checkbox = page.locator(
                     "div.ui-multiselect-panel div.ui-chkbox-box.ui-widget.ui-corner-all.ui-state-default"
                 ).first
                 await multiselect_checkbox.wait_for(state="visible", timeout=5000)
                 await multiselect_checkbox.click()
+                logger.info(f"{batch_prefix}Step 22: ✓ Completed checkbox selected")
 
                 download_results = (
                     page.locator("span", has_text="Download results").first
@@ -886,8 +989,10 @@ async def process_single_course_in_session(
                 await download_results.wait_for(state="visible", timeout=10000)
                 await download_results.scroll_into_view_if_needed()
                 await download_results.click()
+                logger.info(f"{batch_prefix}Step 23: ✓ 'Download results' clicked")
 
                 # Select Excel option instead of CSV
+                logger.info(f"{batch_prefix}Step 24: Selecting Excel format for download...")
                 excel_option_clicked = False
                 try:
                     # Try to find by label text "Excel (.xlsx)"
@@ -895,6 +1000,7 @@ async def process_single_course_in_session(
                     await excel_label.wait_for(state="visible", timeout=5000)
                     await excel_label.click()
                     excel_option_clicked = True
+                    logger.info(f"{batch_prefix}Step 25: ✓ Excel format selected (method 1)")
                 except Exception:
                     try:
                         # Try to find by input value="excel"
@@ -902,6 +1008,7 @@ async def process_single_course_in_session(
                         await excel_input.wait_for(state="visible", timeout=5000)
                         await excel_input.click()
                         excel_option_clicked = True
+                        logger.info(f"{batch_prefix}Step 25: ✓ Excel format selected (method 2)")
                     except Exception:
                         try:
                             # Try to find p-radiobutton with label="Excel (.xlsx)"
@@ -909,56 +1016,76 @@ async def process_single_course_in_session(
                             await excel_radio.wait_for(state="visible", timeout=5000)
                             await excel_radio.click()
                             excel_option_clicked = True
+                            logger.info(f"{batch_prefix}Step 25: ✓ Excel format selected (method 3)")
                         except Exception:
                             # Fallback: find span inside p-radiobutton with Excel label
                             excel_span = page.locator('p-radiobutton:has(label:has-text("Excel")) span.ui-radiobutton-icon').first
                             await excel_span.wait_for(state="visible", timeout=5000)
                             await excel_span.click()
                             excel_option_clicked = True
+                            logger.info(f"{batch_prefix}Step 25: ✓ Excel format selected (method 4)")
 
                 download_button = page.locator(
                     "button.download-button"
                 ).first
                 await download_button.wait_for(state="visible", timeout=5000)
+                logger.info(f"{batch_prefix}Step 26: Download button found, initiating download...")
                 try:
                     async with page.expect_download() as download_info:
                         await download_button.click()
                     download = await download_info.value
+                    logger.info(f"{batch_prefix}Step 27: ✓ Download started")
                     suggested_name = download.suggested_filename
                     extension = Path(suggested_name).suffix or ".xlsx"
                     if sanitized_filename:
                         target_path = download_dir / f"{sanitized_filename}{extension}"
                     else:
                         target_path = download_dir / suggested_name
+                    logger.info(f"{batch_prefix}Step 28: Saving file as: {target_path.name}")
                     await download.save_as(str(target_path))
+                    logger.info(f"{batch_prefix}Step 29: ✓ File saved: {target_path.name}")
+                    
+                    # Wait a bit for file to be fully written
+                    await page.wait_for_timeout(2000)
                     
                     # On Render, store file info for download (same as in open_and_login_with_playwright)
-                    if os.environ.get("RENDER") and target_path.exists():
-                        file_id = secrets.token_urlsafe(16)
-                        with open(target_path, "rb") as f:
-                            file_data = f.read()
-                        DOWNLOADED_FILES[file_id] = {
-                            "data": file_data,
-                            "filename": target_path.name,
-                            "created": time.time()
-                        }
-                        # Clean up old files (older than 1 hour)
-                        current_time = time.time()
-                        for k in list(DOWNLOADED_FILES.keys()):
-                            if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
-                                del DOWNLOADED_FILES[k]
-                        logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                    if os.environ.get("RENDER"):
+                        # Check if file exists, retry if needed
+                        max_retries = 5
+                        retry_count = 0
+                        while not target_path.exists() and retry_count < max_retries:
+                            await page.wait_for_timeout(1000)
+                            retry_count += 1
+                            logger.info(f"Waiting for file to exist: {target_path.name}, retry {retry_count}/{max_retries}")
                         
-                        # Add to recent files for notification
-                        RECENT_FILE_IDS.insert(0, {
-                            "file_id": file_id,
-                            "filename": target_path.name,
-                            "created": time.time()
-                        })
-                        # Keep only last 10 files
-                        if len(RECENT_FILE_IDS) > 10:
-                            RECENT_FILE_IDS.pop()
-                        logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
+                        if target_path.exists():
+                            file_id = secrets.token_urlsafe(16)
+                            with open(target_path, "rb") as f:
+                                file_data = f.read()
+                            DOWNLOADED_FILES[file_id] = {
+                                "data": file_data,
+                                "filename": target_path.name,
+                                "created": time.time()
+                            }
+                            # Clean up old files (older than 1 hour)
+                            current_time = time.time()
+                            for k in list(DOWNLOADED_FILES.keys()):
+                                if current_time - DOWNLOADED_FILES[k]["created"] > 3600:
+                                    del DOWNLOADED_FILES[k]
+                            logger.info(f"File downloaded and stored with ID: {file_id}, filename: {target_path.name}")
+                            
+                            # Add to recent files for notification
+                            RECENT_FILE_IDS.insert(0, {
+                                "file_id": file_id,
+                                "filename": target_path.name,
+                                "created": time.time()
+                            })
+                            # Keep only last 10 files
+                            if len(RECENT_FILE_IDS) > 10:
+                                RECENT_FILE_IDS.pop()
+                            logger.info(f"Added file to notification list (from process_single). Total recent files: {len(RECENT_FILE_IDS)}")
+                        else:
+                            logger.warning(f"File not found after download: {target_path}. File may not have been saved correctly.")
                     
                     # Close dialogs after download - EXACT same code
                     # Increase wait time for batch processing to ensure download completes
@@ -1173,14 +1300,20 @@ async def process_multiple_reports(
             await page.wait_for_timeout(2000)
             
             # Process each row
+            logger.info(f"[BATCH] Starting batch processing of {len(csv_rows)} courses...")
             for idx, row in enumerate(csv_rows, 1):
                 course_query = row.get("course_name", "").strip()
                 module_query = row.get("module_name", "").strip()
                 test_query = row.get("test_name", "").strip()
                 
+                logger.info(f"[BATCH] ========== Processing Row {idx}/{len(csv_rows)} ==========")
+                logger.info(f"[BATCH] Course: '{course_query}', Module: '{module_query}', Test: '{test_query}'")
+                
                 if not course_query or not module_query or not test_query:
                     error_count += 1
-                    results.append(f"Row {idx}: Missing required fields")
+                    error_msg = f"Row {idx}: Missing required fields"
+                    results.append(error_msg)
+                    logger.error(f"[BATCH] ✗ {error_msg}")
                     continue
                 
                 try:
@@ -1197,6 +1330,7 @@ async def process_multiple_reports(
                     if ok:
                         success_count += 1
                         results.append(f"Row {idx}: Success - {course_query} - {test_query}")
+                        logger.info(f"[BATCH] ✓ Row {idx} completed successfully: {course_query} - {test_query}")
                         
                         # Go back to Courses page for next iteration
                         await page.wait_for_timeout(2000)
@@ -1210,12 +1344,17 @@ async def process_multiple_reports(
                     else:
                         error_count += 1
                         results.append(f"Row {idx}: Failed - {msg}")
+                        logger.error(f"[BATCH] ✗ Row {idx} failed: {msg}")
                     
                     await page.wait_for_timeout(1000)
                     
                 except Exception as exc:  # noqa: BLE001
                     error_count += 1
-                    results.append(f"Row {idx}: Error - {exc}")
+                    error_msg = f"Row {idx}: Error - {exc}"
+                    results.append(error_msg)
+                    logger.error(f"[BATCH] ✗ {error_msg}", exc_info=True)
+                
+                logger.info(f"[BATCH] Progress: {success_count} succeeded, {error_count} failed out of {idx} processed")
             
             # Close browser after all rows are processed
             await browser.close()
