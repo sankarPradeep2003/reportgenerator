@@ -801,10 +801,27 @@ async def process_single_course_in_session(
                 # Wait for search results to appear and click on the course row
                 try:
                     logger.info(f"{batch_prefix}Step 3: Waiting for course search results...")
-                    # Wait for the results table to appear
-                    await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=10000)
-                    await page.wait_for_timeout(2000)  # Additional wait for table to fully render
-                    logger.info(f"{batch_prefix}Step 4: ✓ Course search results displayed")
+                    # Wait for the results table to appear with longer timeout and retries
+                    max_retries = 3
+                    table_ready = False
+                    for retry in range(max_retries):
+                        try:
+                            await page.wait_for_selector("tbody.ui-datatable-data", state="visible", timeout=15000)
+                            table_ready = True
+                            logger.info(f"{batch_prefix}Step 3: Search results table found (attempt {retry + 1})")
+                            break
+                        except Exception as e:
+                            if retry < max_retries - 1:
+                                logger.warning(f"{batch_prefix}Step 3: Table not ready, retrying... (attempt {retry + 1}/{max_retries})")
+                                await page.wait_for_timeout(3000)
+                            else:
+                                raise e
+                    
+                    if table_ready:
+                        await page.wait_for_timeout(2000)  # Additional wait for table to fully render
+                        logger.info(f"{batch_prefix}Step 4: ✓ Course search results displayed")
+                    else:
+                        raise Exception("Search results table not available after retries")
                     
                     # Try to click the row containing the course name (partial match)
                     course_row_clicked = False
@@ -896,10 +913,30 @@ async def process_single_course_in_session(
             target_test = " ".join(test_query.strip().split())
             logger.info(f"{batch_prefix}Step 11: Searching for test: '{target_test}'")
             try:
-                main_container = page.locator("div.ui-g-9.maindivpre")
-                await main_container.wait_for(state="visible", timeout=5000)
-                test_cards = main_container.locator("div.ui-g-12.moduletest")
-                logger.info(f"{batch_prefix}Step 12: Test cards container found")
+                # Wait for main container with longer timeout and retries
+                max_retries = 3
+                container_ready = False
+                for retry in range(max_retries):
+                    try:
+                        main_container = page.locator("div.ui-g-9.maindivpre")
+                        await main_container.wait_for(state="visible", timeout=15000)
+                        container_ready = True
+                        logger.info(f"{batch_prefix}Step 11: Main container found (attempt {retry + 1})")
+                        break
+                    except Exception as e:
+                        if retry < max_retries - 1:
+                            logger.warning(f"{batch_prefix}Step 11: Main container not ready, retrying... (attempt {retry + 1}/{max_retries})")
+                            await page.wait_for_timeout(3000)
+                        else:
+                            raise e
+                
+                if container_ready:
+                    test_cards = main_container.locator("div.ui-g-12.moduletest")
+                    # Wait for test cards to be available
+                    await test_cards.first.wait_for(state="visible", timeout=15000)
+                    logger.info(f"{batch_prefix}Step 12: Test cards container found")
+                else:
+                    raise Exception("Main container not available after retries")
 
                 pattern = _re.compile(_re.escape(target_test), flags=_re.IGNORECASE)
                 matching_card = test_cards.filter(has_text=pattern)
@@ -1333,14 +1370,48 @@ async def process_multiple_reports(
                         logger.info(f"[BATCH] ✓ Row {idx} completed successfully: {course_query} - {test_query}")
                         
                         # Go back to Courses page for next iteration
-                        await page.wait_for_timeout(2000)
+                        logger.info(f"[BATCH] Navigating back to Courses page for next course...")
+                        await page.wait_for_timeout(3000)  # Wait a bit longer after download
+                        
+                        # Try multiple methods to navigate back to Courses
+                        course_navigated = False
                         try:
+                            # Method 1: Click Courses menu
                             course_locator = page.locator("div.left-menu li[ptooltip='Courses']")
-                            await course_locator.wait_for(state="visible", timeout=10000)
+                            await course_locator.wait_for(state="visible", timeout=15000)
                             await course_locator.first.click()
-                            await page.wait_for_timeout(2000)
-                        except Exception:
-                            pass
+                            course_navigated = True
+                            logger.info(f"[BATCH] ✓ Courses menu clicked")
+                        except Exception as e:
+                            logger.warning(f"[BATCH] Failed to click Courses menu (method 1): {e}")
+                            try:
+                                # Method 2: Try alternative selector
+                                course_locator = page.locator("div.left-menu li.each-tool[ptooltip='Courses']")
+                                await course_locator.wait_for(state="visible", timeout=15000)
+                                await course_locator.first.click()
+                                course_navigated = True
+                                logger.info(f"[BATCH] ✓ Courses menu clicked (method 2)")
+                            except Exception as e2:
+                                logger.warning(f"[BATCH] Failed to click Courses menu (method 2): {e2}")
+                        
+                        if course_navigated:
+                            # Wait for Courses page to fully load
+                            await page.wait_for_timeout(3000)
+                            try:
+                                await page.wait_for_load_state("networkidle", timeout=15000)
+                                logger.info(f"[BATCH] ✓ Courses page loaded")
+                            except Exception:
+                                logger.warning(f"[BATCH] Timeout waiting for networkidle, continuing anyway")
+                            
+                            # Wait for search input to be ready
+                            try:
+                                search_sel = "input[placeholder='Enter course name to search']"
+                                await page.wait_for_selector(search_sel, state="visible", timeout=20000)
+                                logger.info(f"[BATCH] ✓ Search input is ready for next course")
+                            except Exception as e:
+                                logger.error(f"[BATCH] ✗ Search input not ready: {e}")
+                        else:
+                            logger.error(f"[BATCH] ✗ Failed to navigate back to Courses page")
                     else:
                         error_count += 1
                         results.append(f"Row {idx}: Failed - {msg}")
