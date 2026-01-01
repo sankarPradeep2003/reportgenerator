@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: reportgenerator
+    env: python
+    buildCommand: chmod +x build.sh && ./build.sh
+    startCommand: python app.py
+    envVars:
+      - key: FLASK_SECRET
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /
+

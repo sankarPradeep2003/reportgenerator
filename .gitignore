@@ -4,13 +4,22 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.venv/
+env/
 venv/
 ENV/
-env/
+.venv/
 
-# Server downloads
+# Flask
+instance/
+.webassets-cache
+
+# Playwright
+.playwright/
+
+# Downloads
 server_downloads/
+*.xlsx
+*.csv
 
 # IDE
 .vscode/
@@ -24,4 +33,8 @@ Thumbs.db
 
 # Logs
 *.log
+firebase-debug.log
 
+# Environment variables
+.env
+.env.local
