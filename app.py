@@ -397,6 +397,7 @@ async def select_excel_and_download(
     course_query: str, test_query: str
 ):
     """Common function to select Excel format and download the file"""
+    print("INFO: Selecting Excel format and initiating download...")
     # Select Excel option instead of CSV
     excel_option_clicked = False
     try:
@@ -446,6 +447,7 @@ async def select_excel_and_download(
             download_filename = suggested_name
         target_path = download_dir / unique_filename
         await download.save_as(str(target_path))
+        print(f"INFO: File downloaded successfully: {download_filename} (saved as {unique_filename})")
         
         # Register the file with the correct filename based on user's choice
         register_downloaded_file(
@@ -454,6 +456,7 @@ async def select_excel_and_download(
             course_query or "",
             test_query or ""
         )
+        print(f"INFO: File registered in system: {download_filename}")
     except Exception:
         await download_button.click()
 
@@ -503,27 +506,49 @@ async def open_and_login_with_playwright(
             
             is_headless = is_server
             
+            # Debug output
+            print(f"DEBUG: Platform: {system}, Headless: {is_headless}, RENDER: {os.environ.get('RENDER')}, HEADLESS: {os.environ.get('HEADLESS')}")
+            
             # Prefer the user's installed Google Chrome; fallback to bundled Chromium
             browser = None
-            launch_options = {"headless": is_headless}
             
             # On headless servers, use bundled Chromium (system Chrome may not be available)
             if not is_headless:
                 # Try to use system Chrome first (visible browser)
                 try:
-                    browser = await p.chromium.launch(channel="chrome", **launch_options)
+                    print("DEBUG: Attempting to launch system Chrome...")
+                    browser = await p.chromium.launch(
+                        channel="chrome",
+                        headless=False,
+                        args=['--start-maximized'] if system == "Windows" else []
+                    )
+                    print("DEBUG: System Chrome launched successfully!")
                 except Exception as chrome_exc:
+                    print(f"DEBUG: System Chrome launch failed: {chrome_exc}, trying bundled Chromium...")
                     # Fallback to bundled Chromium if system Chrome not available
                     try:
-                        browser = await p.chromium.launch(**launch_options)
+                        browser = await p.chromium.launch(
+                            headless=False,
+                            args=['--start-maximized'] if system == "Windows" else []
+                        )
+                        print("DEBUG: Bundled Chromium launched successfully!")
                     except Exception as chromium_exc:
-                        return False, f"Failed to launch browser: {chromium_exc}. Chrome/Chromium not found or not accessible."
+                        error_msg = f"Failed to launch browser: {chromium_exc}. Make sure Playwright is installed: 'pip install playwright' and 'python -m playwright install chromium'"
+                        print(f"ERROR: {error_msg}")  # Debug output
+                        return False, error_msg
             else:
                 # On headless servers, use bundled Chromium
                 try:
-                    browser = await p.chromium.launch(**launch_options)
+                    print("DEBUG: Launching headless browser...")
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for some Linux servers
+                    )
+                    print("DEBUG: Headless browser launched successfully!")
                 except Exception as headless_exc:
-                    return False, f"Failed to launch headless browser: {headless_exc}. Make sure Playwright browsers are installed."
+                    error_msg = f"Failed to launch headless browser: {headless_exc}. Make sure Playwright browsers are installed."
+                    print(f"ERROR: {error_msg}")  # Debug output
+                    return False, error_msg
             
             # Store browser reference for cancellation
             if process_id and process_id in active_processes:
@@ -539,8 +564,10 @@ async def open_and_login_with_playwright(
             page = await context.new_page()
             
             # Navigate and wait for redirects to complete
+            print(f"INFO: Navigating to URL: {url}")
             await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_load_state("networkidle")
+            print("INFO: Page loaded successfully")
             
             # Wait for the Angular form fields to be available (using your exact selectors)
             email_selector = 'input[id="emailAddress"]'
@@ -548,11 +575,14 @@ async def open_and_login_with_playwright(
             
             try:
                 # Wait for email field to be visible and ready
+                print("INFO: Waiting for login form...")
                 await page.wait_for_selector(email_selector, state="visible", timeout=30000)
+                print(f"INFO: Filling email field: {username}")
                 await page.fill(email_selector, username)
                 
                 # Wait for password field to be visible and ready
                 await page.wait_for_selector(password_selector, state="visible", timeout=10000)
+                print("INFO: Filling password field")
                 await page.fill(password_selector, password)
                 
                 # Try to find and click the Login button using your markup
@@ -587,9 +617,11 @@ async def open_and_login_with_playwright(
                 
                 # Wait for navigation and then attempt to select the Courses tool
                 try:
+                    print("INFO: Waiting for page to load after login...")
                     await page.wait_for_load_state("networkidle", timeout=60000)
                     # Additional wait for Angular to render the menu items
                     await page.wait_for_timeout(2000)
+                    print("INFO: Login successful, page loaded")
                 except Exception:
                     pass
 
@@ -667,6 +699,7 @@ async def open_and_login_with_playwright(
 
                     # If a course query was provided, focus search and type it
                     if course_clicked and (course_query or "").strip():
+                        print(f"INFO: Searching for course: {course_query.strip()}")
                         search_sel = "input[placeholder='Enter course name to search']"
                         try:
                             await page.wait_for_selector(search_sel, state="visible", timeout=20000)
@@ -674,6 +707,7 @@ async def open_and_login_with_playwright(
                             await page.fill(search_sel, course_query.strip())
                             # Submit with Enter to trigger search
                             await page.press(search_sel, "Enter")
+                            print(f"INFO: Course search submitted: {course_query.strip()}")
                             
                             # Wait for search results to appear and click on the course row
                             try:
@@ -722,6 +756,7 @@ async def open_and_login_with_playwright(
                     # If a module was supplied, click the matching module in the sidebar
                     if (module_query or "").strip():
                         target_module = " ".join(module_query.strip().split())
+                        print(f"INFO: Selecting module: {target_module}")
                         try:
                             sidebar = page.locator("div.ui-g-3.sidedivpre")
                             module_entries = sidebar.locator("span.modulelist")
@@ -752,6 +787,7 @@ async def open_and_login_with_playwright(
                     
                     if (test_query or "").strip():
                         target_test = " ".join(test_query.strip().split())
+                        print(f"INFO: Selecting test: {target_test}")
                         try:
                             main_container = page.locator("div.ui-g-9.maindivpre")
                             await main_container.wait_for(state="visible", timeout=5000)
@@ -781,10 +817,12 @@ async def open_and_login_with_playwright(
                         
                         try:
                             # Performance and Participation Report flow (existing)
+                            print("INFO: Starting report download process...")
                             await download_performance_participation_report(
                                 page, download_dir, sanitized_filename,
                                 course_query or "", test_query or ""
                             )
+                            print(f"INFO: Report download completed for: {course_query or ''} - {test_query or ''}")
                             
                             # Click the close button after download completes
                             await page.wait_for_timeout(10000)  # Wait 10 seconds after download completes
@@ -1231,6 +1269,34 @@ def list_downloads():
     return jsonify({"files": files})
 
 
+@app.get("/api/generation-status")
+def generation_status():
+    """API endpoint to check the status of report generation."""
+    if not active_processes:
+        return jsonify({"active": False, "message": "No active generation processes"})
+    
+    # Get the most recent process
+    latest_process = max(active_processes.items(), key=lambda x: x[1].get('started_at', 0))
+    process_id, process_info = latest_process
+    
+    status = {
+        "active": True,
+        "process_id": process_id,
+        "started_at": process_info.get('started_at', 0),
+        "cancelled": process_info.get('cancelled', False),
+    }
+    
+    if 'result' in process_info:
+        result = process_info['result']
+        status["success"] = result[0]
+        status["message"] = result[1]
+    elif 'error' in process_info:
+        status["success"] = False
+        status["error"] = process_info['error']
+    
+    return jsonify(status)
+
+
 @app.post("/api/cancel-generation")
 def cancel_generation():
     """Cancel the current report generation process and close browser"""
@@ -1416,7 +1482,7 @@ def open_url():
                 if process_id in active_processes and active_processes[process_id].get('cancelled'):
                     return
                 
-                asyncio.run(
+                result = asyncio.run(
                     open_and_login_with_playwright(
                         url,
                         username,
@@ -1432,8 +1498,19 @@ def open_url():
                         batch=batch if report_type == "test_analysis" else "",
                     )
                 )
-            except Exception:
-                pass
+                # Store result for debugging
+                if process_id in active_processes:
+                    active_processes[process_id]['result'] = result
+                    if not result[0]:  # If failed
+                        print(f"ERROR: Report generation failed: {result[1]}")
+            except Exception as exc:
+                error_msg = f"Thread error: {exc}"
+                print(f"ERROR: {error_msg}")
+                import traceback
+                traceback.print_exc()
+                # Store error in process info
+                if process_id in active_processes:
+                    active_processes[process_id]['error'] = error_msg
             finally:
                 # Remove from active processes when done
                 active_processes.pop(process_id, None)
