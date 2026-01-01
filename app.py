@@ -48,17 +48,23 @@ def ensure_playwright_browsers_installed():
     try:
         print("INFO: Checking Playwright browser installation...")
         
-        # Check if browsers are already installed
+        # Check if Chrome is already installed
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
             p_check = sync_playwright().start()
             try:
+                # Try to launch Chrome in headless mode to verify it exists
+                browser = p_check.chromium.launch(channel="chrome", headless=True)
+                browser.close()
                 chromium_path = p_check.chromium.executable_path
                 import os
                 if os.path.exists(chromium_path):
-                    print(f"INFO: Playwright browsers already installed at: {chromium_path}")
+                    print(f"INFO: Chrome already installed at: {chromium_path}")
                     _browser_install_success = True
                     return True
+            except Exception as check_exc:
+                # Chrome launch failed, Chrome not installed
+                print(f"DEBUG: Chrome check failed (Chrome not installed): {check_exc}")
             finally:
                 p_check.stop()
         except Exception:
@@ -69,34 +75,44 @@ def ensure_playwright_browsers_installed():
         print("INFO: This may take a few minutes on first startup...")
         
         import subprocess
-        # Install all browsers (includes chromium, chromium-headless-shell, firefox, webkit)
-        # This ensures we have everything needed, especially the headless shell
-        print("INFO: Installing Playwright browsers (this includes headless shell)...")
+        # Install Chrome only (user requirement)
+        print("INFO: Installing Chrome browser...")
         result = subprocess.run(
-            ["python", "-m", "playwright", "install", "--force"],
+            ["python", "-m", "playwright", "install", "chrome", "--force"],
             capture_output=True,
             text=True,
-            timeout=900  # 15 minute timeout for all browsers
+            timeout=600  # 10 minute timeout
         )
         
-        # If installing all browsers fails or takes too long, try just chromium-headless-shell
-        if result.returncode != 0:
-            print("INFO: Full browser install had issues, trying headless shell only...")
-            result = subprocess.run(
-                ["python", "-m", "playwright", "install", "chromium-headless-shell", "--force"],
-                capture_output=True,
-                text=True,
-                timeout=600
-            )
-        
         if result.returncode == 0:
-            print("INFO: ✅ Playwright browsers installed successfully!")
-            _browser_install_success = True
-            return True
+            # Verify Chrome actually works
+            try:
+                from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
+                p_verify = sync_playwright().start()
+                try:
+                    # Try to launch Chrome in headless mode
+                    browser = p_verify.chromium.launch(channel="chrome", headless=True)
+                    browser.close()
+                    print("INFO: ✅ Chrome installed and verified!")
+                    _browser_install_success = True
+                    return True
+                except Exception as verify_exc:
+                    print(f"WARNING: Installation succeeded but Chrome doesn't work: {verify_exc}")
+                    print("INFO: Will retry installation on next request...")
+                    _browser_install_success = False  # Reset so it tries again
+                    return False
+                finally:
+                    p_verify.stop()
+            except Exception as verify_err:
+                print(f"WARNING: Could not verify Chrome installation: {verify_err}")
+                # Assume it worked if we can't verify
+                print("INFO: ✅ Chrome installed (verification skipped)")
+                _browser_install_success = True
+                return True
         else:
             error_output = result.stderr or result.stdout
-            print(f"WARNING: Browser installation had issues: {error_output[:500]}")
-            # Don't fail completely - might still work
+            print(f"ERROR: Chrome installation failed: {error_output[:500]}")
+            print("ERROR: Chrome is required. Please ensure Chrome can be installed on this system.")
             return False
             
     except subprocess.TimeoutExpired:
@@ -615,16 +631,17 @@ async def open_and_login_with_playwright(
                         print(f"ERROR: {error_msg}")  # Debug output
                         return False, error_msg
             else:
-                # On headless servers, use bundled Chromium
+                # On headless servers, use Chrome only
                 try:
-                    print("DEBUG: Launching headless browser...")
+                    print("DEBUG: Launching Chrome in headless mode...")
                     browser = await p.chromium.launch(
+                        channel="chrome",
                         headless=True,
                         args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for some Linux servers
                     )
-                    print("DEBUG: Headless browser launched successfully!")
+                    print("DEBUG: Chrome launched successfully in headless mode!")
                 except Exception as headless_exc:
-                    error_msg = f"Failed to launch headless browser: {headless_exc}. Make sure Playwright browsers are installed."
+                    error_msg = f"Failed to launch Chrome: {headless_exc}. Chrome is required. Please ensure Chrome is installed via 'python -m playwright install chrome'."
                     print(f"ERROR: {error_msg}")  # Debug output
                     return False, error_msg
             

@@ -10,13 +10,9 @@ pip install -r requirements.txt
 echo "Step 2: Verifying Playwright installation..."
 python -m playwright --version
 
-echo "Step 3: Installing Playwright Chromium browser..."
-# Install chromium browser - this is critical
-python -m playwright install chromium
-
-echo "Step 3b: Installing Chromium headless shell (required for headless mode)..."
-# Install headless shell which is required for headless mode on servers
-python -m playwright install chromium-headless-shell || echo "Note: headless-shell install had issues, continuing..."
+echo "Step 3: Installing Playwright Chrome browser..."
+# Install Chrome only (user requirement)
+python -m playwright install chrome
 
 echo "Step 4: Installing system dependencies for Playwright..."
 # Install system dependencies (required for headless mode on Linux)
