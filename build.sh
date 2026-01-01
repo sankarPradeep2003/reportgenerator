@@ -14,6 +14,10 @@ echo "Step 3: Installing Playwright Chromium browser..."
 # Install chromium browser - this is critical
 python -m playwright install chromium
 
+echo "Step 3b: Installing Chromium headless shell (required for headless mode)..."
+# Install headless shell which is required for headless mode on servers
+python -m playwright install chromium-headless-shell || echo "Note: headless-shell install had issues, continuing..."
+
 echo "Step 4: Installing system dependencies for Playwright..."
 # Install system dependencies (required for headless mode on Linux)
 # This may fail on some systems but is not always critical - don't fail the build

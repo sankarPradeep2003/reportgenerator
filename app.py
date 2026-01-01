@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -68,12 +69,25 @@ def ensure_playwright_browsers_installed():
         print("INFO: This may take a few minutes on first startup...")
         
         import subprocess
+        # Install all browsers (includes chromium, chromium-headless-shell, firefox, webkit)
+        # This ensures we have everything needed, especially the headless shell
+        print("INFO: Installing Playwright browsers (this includes headless shell)...")
         result = subprocess.run(
-            ["python", "-m", "playwright", "install", "chromium", "--force"],
+            ["python", "-m", "playwright", "install", "--force"],
             capture_output=True,
             text=True,
-            timeout=600  # 10 minute timeout for installation
+            timeout=900  # 15 minute timeout for all browsers
         )
+        
+        # If installing all browsers fails or takes too long, try just chromium-headless-shell
+        if result.returncode != 0:
+            print("INFO: Full browser install had issues, trying headless shell only...")
+            result = subprocess.run(
+                ["python", "-m", "playwright", "install", "chromium-headless-shell", "--force"],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
         
         if result.returncode == 0:
             print("INFO: ✅ Playwright browsers installed successfully!")
@@ -1310,7 +1324,38 @@ async def process_single_course_in_session(
 
 @app.get("/")
 def index():
+    """Home page - start browser installation in background when user visits."""
+    # Start installing browsers in background when user visits
+    _install_browsers_in_background()
     return render_template("index.html", status=None)
+
+
+@app.get("/api/browser-status")
+def browser_status():
+    """API endpoint to check browser installation status."""
+    global _browser_install_in_progress
+    
+    # Check if browsers are actually installed
+    browsers_ready = False
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
+        p_check = sync_playwright().start()
+        try:
+            browser = p_check.chromium.launch(headless=True)
+            browser.close()
+            browsers_ready = True
+        except Exception:
+            browsers_ready = False
+        finally:
+            p_check.stop()
+    except Exception:
+        browsers_ready = False
+    
+    return jsonify({
+        "installed": browsers_ready,
+        "installing": _browser_install_in_progress,
+        "success": _browser_install_success
+    })
 
 
 @app.get("/api/downloads")
@@ -1534,9 +1579,36 @@ def open_url():
         flash(f"Please provide the following required fields: {field_list}.", category="error")
         return redirect(url_for("index"))
 
-    # If credentials given, run Playwright automation in background
+    # If credentials given, ensure browsers are installed first, then run Playwright automation
     if username and password:
-        import threading, asyncio
+        import asyncio
+
+        # Ensure browsers are installed before starting
+        if not _browser_install_success:
+            print("INFO: Browsers not ready, ensuring installation...")
+            # Try to install synchronously if not already installing
+            if not _browser_install_in_progress:
+                ensure_playwright_browsers_installed()
+            else:
+                # Wait a bit for installation to complete
+                max_wait = 300  # 5 minutes max wait
+                waited = 0
+                while _browser_install_in_progress and waited < max_wait:
+                    time.sleep(5)
+                    waited += 5
+                    if _browser_install_success:
+                        break
+        
+        # Check one more time
+        if not _browser_install_success:
+            # Try one more synchronous install attempt
+            print("INFO: Final attempt to install browsers...")
+            ensure_playwright_browsers_installed()
+        
+        # If still not installed, show error to user
+        if not _browser_install_success:
+            flash("Browsers are still installing. Please wait a moment and try again. This may take 2-5 minutes on first use.", category="error")
+            return redirect(url_for("index"))
 
         process_id = str(uuid.uuid4())
         
@@ -1595,27 +1667,33 @@ def open_url():
     return redirect(url_for("index"))
 
 
-# Install browsers automatically when app starts (in background thread to not block startup)
+# Browser installation status tracking
+_browser_install_in_progress = False
+_browser_install_thread = None
+
 def _install_browsers_in_background():
-    """Install browsers in background thread so app can start immediately."""
-    import threading
-    def _install():
-        time.sleep(2)  # Wait 2 seconds for app to fully start
-        ensure_playwright_browsers_installed()
+    """Install browsers in background thread - called when user visits the site."""
+    global _browser_install_in_progress, _browser_install_thread
     
-    thread = threading.Thread(target=_install, daemon=True)
-    thread.start()
-    return thread
-
-# Start browser installation in background when module loads
-_install_browsers_in_background()
-
-# Flask before_first_request equivalent - runs before first request
-@app.before_request
-def before_first_request():
-    """Ensure browsers are installed before handling requests."""
-    # This will only actually install if not already attempted
-    ensure_playwright_browsers_installed()
+    # Don't start multiple installations
+    if _browser_install_in_progress or _browser_install_success:
+        return
+    
+    if _browser_install_thread and _browser_install_thread.is_alive():
+        return  # Already installing
+    
+    _browser_install_in_progress = True
+    
+    def _install():
+        global _browser_install_in_progress
+        try:
+            ensure_playwright_browsers_installed()
+        finally:
+            _browser_install_in_progress = False
+    
+    _browser_install_thread = threading.Thread(target=_install, daemon=True)
+    _browser_install_thread.start()
+    return _browser_install_thread
 
 
 if __name__ == "__main__":
