@@ -1,0 +1,30 @@
+[debug] [2025-11-22T07:50:57.566Z] ----------------------------------------------------------------------
+[debug] [2025-11-22T07:50:57.572Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\PradeepM\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js projects:list
+[debug] [2025-11-22T07:50:57.573Z] CLI Version:   14.26.0
+[debug] [2025-11-22T07:50:57.573Z] Platform:      win32
+[debug] [2025-11-22T07:50:57.573Z] Node Version:  v22.16.0
+[debug] [2025-11-22T07:50:57.574Z] Time:          Sat Nov 22 2025 13:20:57 GMT+0530 (India Standard Time)
+[debug] [2025-11-22T07:50:57.574Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-11-22T07:50:57.994Z] Object "" in "firebase.json" has unknown property: {"additionalProperty":"run"}
+[debug] [2025-11-22T07:50:58.002Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-11-22T07:50:58.003Z] > authorizing via signed-in user (sankarpradeep77@gmail.com)
+[debug] [2025-11-22T07:50:58.011Z] Checked if tokens are valid: true, expires at: 1763799664720
+[debug] [2025-11-22T07:50:58.012Z] Checked if tokens are valid: true, expires at: 1763799664720
+[debug] [2025-11-22T07:50:58.014Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=1000
+[debug] [2025-11-22T07:50:59.216Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects 200
+[debug] [2025-11-22T07:51:31.320Z] ----------------------------------------------------------------------
+[debug] [2025-11-22T07:51:31.327Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\PradeepM\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js projects:list
+[debug] [2025-11-22T07:51:31.328Z] CLI Version:   14.26.0
+[debug] [2025-11-22T07:51:31.328Z] Platform:      win32
+[debug] [2025-11-22T07:51:31.329Z] Node Version:  v22.16.0
+[debug] [2025-11-22T07:51:31.329Z] Time:          Sat Nov 22 2025 13:21:31 GMT+0530 (India Standard Time)
+[debug] [2025-11-22T07:51:31.329Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-11-22T07:51:31.777Z] Object "" in "firebase.json" has unknown property: {"additionalProperty":"run"}
+[debug] [2025-11-22T07:51:31.785Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-11-22T07:51:31.786Z] > authorizing via signed-in user (sankarpradeep77@gmail.com)
+[debug] [2025-11-22T07:51:31.793Z] Checked if tokens are valid: true, expires at: 1763799664720
+[debug] [2025-11-22T07:51:31.794Z] Checked if tokens are valid: true, expires at: 1763799664720
+[debug] [2025-11-22T07:51:31.796Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=1000
+[debug] [2025-11-22T07:51:32.910Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects 200

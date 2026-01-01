@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Report Generator</title>
+    <style>
+        :root {
+            --page-bg: linear-gradient(135deg, #0f0c29 0%, #302b63 25%, #24243e 50%, #1a1a2e 75%, #16213e 100%);
+            --panel-bg: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 50%, #1a1a3e 100%);
+            --card-bg: rgba(30, 30, 63, 0.95);
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-soft: rgba(99, 102, 241, 0.2);
+            --accent-1: #ec4899;
+            --accent-2: #8b5cf6;
+            --accent-3: #06b6d4;
+            --accent-4: #10b981;
+            --text-strong: #ffffff;
+            --text-base: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border-color: rgba(99, 102, 241, 0.3);
+            --radius-lg: 20px;
+            --radius-md: 12px;
+            --shadow-xl: 0 24px 45px rgba(0, 0, 0, 0.5), 0 0 30px rgba(99, 102, 241, 0.2);
+            --shadow-soft: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 15px rgba(99, 102, 241, 0.1);
+            --transition-base: 160ms ease;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--text-base);
+            background: var(--page-bg);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        .page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 28px;
+            padding: 48px 18px 64px;
+        }
+
+        .page__header {
+            max-width: 720px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: fadeSlide 420ms ease-out both;
+        }
+
+        .page__header h1 {
+            margin: 0;
+            font-size: clamp(2rem, 3vw, 2.5rem);
+            background: linear-gradient(135deg, #6366f1 0%, #ec4899 50%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+            font-weight: 800;
+            text-shadow: 0 0 30px rgba(99, 102, 241, 0.5);
+        }
+
+        .page__subtitle {
+            margin: 0;
+            font-size: 1rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .page__body {
+            width: 100%;
+            display: grid;
+            gap: 24px;
+            justify-items: center;
+        }
+
+        .card {
+            width: min(560px, 100%);
+            padding: 28px clamp(20px, 4vw, 40px);
+            border-radius: var(--radius-lg);
+            background: var(--card-bg);
+            box-shadow: var(--shadow-soft);
+            border: 2px solid var(--border-color);
+            transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1 0%, #ec4899 50%, #8b5cf6 100%);
+            opacity: 0.8;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-xl);
+            border-color: rgba(99, 102, 241, 0.6);
+        }
+
+        form {
+            display: grid;
+            gap: 18px;
+        }
+
+        .fields {
+            display: grid;
+            gap: 16px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+        }
+
+        label {
+            font-weight: 600;
+            color: var(--text-strong);
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            border: 2px solid var(--border-color);
+            background: rgba(15, 15, 35, 0.6);
+            color: var(--text-base);
+            transition: border-color var(--transition-base), box-shadow var(--transition-base), background var(--transition-base);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        input:focus-visible {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(15, 15, 35, 0.8);
+            box-shadow: 0 0 0 3px var(--primary-soft), 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+
+        button {
+            justify-self: start;
+            margin-top: 4px;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+            color: #fff;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 12px 25px rgba(99, 102, 241, 0.4), 0 0 30px rgba(236, 72, 153, 0.3);
+            transition: transform 140ms ease, box-shadow 140ms ease, background 180ms ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f472b6 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 16px 30px rgba(99, 102, 241, 0.5), 0 0 40px rgba(236, 72, 153, 0.4);
+        }
+
+        button:focus-visible {
+            outline: 3px solid var(--primary-soft);
+            outline-offset: 3px;
+        }
+
+        .button__icon {
+            display: inline-flex;
+            width: 18px;
+            height: 18px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        small {
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 8px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .checkbox-label input[type="radio"] {
+            width: auto;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .checkbox-label span {
+            user-select: none;
+        }
+
+        .status-stack {
+            width: min(560px, 100%);
+            display: grid;
+            gap: 14px;
+            animation: fadeSlide 520ms ease-out both;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            border-radius: var(--radius-md);
+            border: 1px solid transparent;
+            font-weight: 500;
+            line-height: 1.5;
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+            animation: liftIn 420ms ease-out both;
+        }
+
+        .status.success {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .status.error {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+
+        @media (max-width: 540px) {
+            .page {
+                padding: 32px 14px 48px;
+            }
+
+            .card {
+                padding: 24px 18px;
+            }
+
+            button {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        @keyframes fadeSlide {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes liftIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border-radius: var(--radius-md);
+            border: 2px solid var(--border-color);
+            background: rgba(15, 15, 35, 0.6);
+            color: var(--text-base);
+            font-size: 0.95rem;
+        }
+
+
+        .notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .notification-icon {
+            position: relative;
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5), 0 0 20px rgba(236, 72, 153, 0.4);
+            transition: transform var(--transition-base), box-shadow var(--transition-base);
+            user-select: none;
+            -webkit-user-select: none;
+            pointer-events: auto;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .notification-icon:hover {
+            transform: scale(1.1) rotate(5deg);
+            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.6), 0 0 30px rgba(236, 72, 153, 0.5);
+        }
+
+        .notification-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+            stroke: white;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            min-width: 24px;
+            padding: 0 4px;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .notification-badge.hidden {
+            display: none;
+        }
+
+        .notification-dropdown {
+            position: absolute;
+            top: 60px;
+            right: 0;
+            width: 360px;
+            max-height: 500px;
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            border: 2px solid var(--border-color);
+            display: none;
+            overflow-y: auto;
+            z-index: 1001;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        .notification-dropdown.show {
+            display: block;
+            animation: fadeSlide 300ms ease-out;
+        }
+
+        .notification-header {
+            padding: 16px 20px;
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
+        }
+
+        .notification-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: var(--text-strong);
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
+
+        .notification-clear {
+            background: none;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            font-size: 0.875rem;
+            padding: 4px 8px;
+            border-radius: var(--radius-md);
+            transition: background var(--transition-base);
+        }
+
+        .notification-clear:hover {
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .notification-list {
+            padding: 8px;
+        }
+
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+            cursor: pointer;
+            transition: background var(--transition-base), transform var(--transition-base);
+            border-radius: var(--radius-md);
+            margin-bottom: 4px;
+            border-left: 3px solid transparent;
+        }
+
+        .notification-item:hover {
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(236, 72, 153, 0.1) 100%);
+            transform: translateX(4px);
+            border-left-color: var(--primary);
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-item-title {
+            font-weight: 600;
+            color: var(--text-strong);
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+        }
+
+        .notification-item-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 12px;
+        }
+
+        .notification-empty {
+            padding: 32px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        .timer-container {
+            width: min(560px, 100%);
+            padding: 20px;
+            border-radius: var(--radius-lg);
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 25%, #ec4899 50%, #f472b6 75%, #06b6d4 100%);
+            box-shadow: var(--shadow-xl), 0 0 40px rgba(99, 102, 241, 0.4);
+            text-align: center;
+            display: none;
+            animation: fadeSlide 420ms ease-out both;
+            margin-bottom: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timer-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            animation: shine 3s infinite;
+        }
+
+        @keyframes shine {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+
+        .timer-container.active {
+            display: block;
+        }
+
+        .timer-label {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .timer-display {
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            margin: 8px 0;
+        }
+
+        .timer-message {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.95rem;
+            margin-top: 8px;
+        }
+
+        .timer-cancel-btn {
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .timer-cancel-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .timer-cancel-btn:active {
+            transform: translateY(0);
+        }
+
+        .timer-container.warning .timer-display {
+            color: #fbbf24;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .timer-container.danger .timer-display {
+            color: #ef4444;
+            animation: pulse 0.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+    </style>
+    <script>
+
+        // Notification system
+        let knownFileIds = new Set();
+        let pollInterval = null;
+
+        function toggleNotificationDropdown(event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('show');
+            }
+        }
+
+        // Make function globally accessible
+        window.toggleNotificationDropdown = toggleNotificationDropdown;
+
+        function clearNotifications() {
+            knownFileIds.clear();
+            updateNotificationUI([]);
+        }
+
+        // Make function globally accessible
+        window.clearNotifications = clearNotifications;
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins} min ago`;
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function updateNotificationUI(files) {
+            const badge = document.getElementById('notificationBadge');
+            const list = document.getElementById('notificationList');
+            
+            // Filter to only new files
+            const newFiles = files.filter(f => !knownFileIds.has(f.id));
+            const totalFiles = files.length;
+            
+            if (totalFiles === 0) {
+                badge.classList.add('hidden');
+                list.innerHTML = '<div class="notification-empty">No files available</div>';
+                return;
+            }
+            
+            badge.textContent = totalFiles > 99 ? '99+' : totalFiles;
+            badge.classList.remove('hidden');
+            
+            if (files.length === 0) {
+                list.innerHTML = '<div class="notification-empty">No files available</div>';
+                return;
+            }
+            
+            list.innerHTML = files.map(file => {
+                const displayName = file.course_name && file.test_name 
+                    ? `${file.course_name} - ${file.test_name}`
+                    : file.filename;
+                return `
+                    <div class="notification-item" data-filename="${file.filename.replace(/"/g, '&quot;')}" data-file-id="${file.id}">
+                        <div class="notification-item-title">${displayName}</div>
+                        <div class="notification-item-meta">
+                            <span>${formatFileSize(file.size)}</span>
+                            <span>${formatTimestamp(file.timestamp)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add click event listeners to notification items using event delegation
+            const notificationItems = list.querySelectorAll('.notification-item');
+            notificationItems.forEach(item => {
+                item.addEventListener('click', function() {
+                    const fileId = this.getAttribute('data-file-id');
+                    if (fileId) {
+                        downloadFile(fileId);
+                    }
+                });
+            });
+            
+            // Add new files to known set
+            newFiles.forEach(f => knownFileIds.add(f.id));
+            
+            // Show browser notification for new files
+            if (newFiles.length > 0 && 'Notification' in window && Notification.permission === 'granted') {
+                new Notification(`New file${newFiles.length > 1 ? 's' : ''} available`, {
+                    body: `${newFiles.length} file${newFiles.length > 1 ? 's' : ''} ready for download`
+                });
+            }
+        }
+
+        // Make downloadFile globally accessible
+        window.downloadFile = async function(fileId) {
+            // Find the file item and get filename from data attribute
+            const item = document.querySelector(`[data-file-id="${fileId}"]`);
+            if (!item) {
+                console.error('File item not found for ID:', fileId);
+                return;
+            }
+            
+            const fileName = item.getAttribute('data-filename') || 'download.xlsx';
+            
+            // Remove from known files immediately
+            knownFileIds.delete(fileId);
+            
+            // Show loading state
+            item.style.opacity = '0.5';
+            item.style.pointerEvents = 'none';
+            
+            try {
+                // Use fetch to download the file as blob, then trigger download
+                // This ensures the file is downloaded to Downloads folder
+                const downloadUrl = `/download/${fileId}`;
+                console.log('Starting download for:', downloadUrl);
+                
+                const response = await fetch(downloadUrl);
+                if (!response.ok) {
+                    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                }
+                
+                // Get the filename from Content-Disposition header or use the stored filename
+                let downloadFileName = fileName;
+                const contentDisposition = response.headers.get('Content-Disposition');
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                    if (filenameMatch && filenameMatch[1]) {
+                        downloadFileName = filenameMatch[1].replace(/['"]/g, '');
+                    }
+                }
+                
+                // Get the blob data
+                const blob = await response.blob();
+                console.log('File downloaded, size:', blob.size, 'bytes');
+                
+                // Create a blob URL and trigger download
+                const blobUrl = window.URL.createObjectURL(blob);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = blobUrl;
+                downloadLink.download = downloadFileName;
+                downloadLink.style.display = 'none';
+                
+                // Append to body, click, and remove
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                
+                // Clean up
+                setTimeout(() => {
+                    document.body.removeChild(downloadLink);
+                    window.URL.revokeObjectURL(blobUrl);
+                }, 100);
+                
+                console.log('Download triggered for:', downloadFileName);
+                
+                // Notify server that download was successful and remove from list
+                try {
+                    await fetch(`/api/downloads/${fileId}/remove`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (err) {
+                    console.warn('Failed to notify server of download:', err);
+                }
+                
+                // Wait a moment for download to start, then remove from UI
+                setTimeout(() => {
+                    // Remove item from UI after download is triggered
+                    if (item && item.parentNode) {
+                        item.remove();
+                    }
+                    
+                    // Update badge count
+                    const remainingItems = document.querySelectorAll('.notification-item').length;
+                    const badge = document.getElementById('notificationBadge');
+                    if (remainingItems === 0) {
+                        badge.classList.add('hidden');
+                        const list = document.getElementById('notificationList');
+                        if (list) {
+                            list.innerHTML = '<div class="notification-empty">No files available</div>';
+                        }
+                    } else {
+                        badge.textContent = remainingItems > 99 ? '99+' : remainingItems;
+                    }
+                    
+                    // Refresh list to sync with server
+                    setTimeout(fetchDownloads, 500);
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Failed to download file: ' + error.message);
+                // Restore item if download failed
+                if (item) {
+                    item.style.opacity = '1';
+                    item.style.pointerEvents = 'auto';
+                }
+                knownFileIds.add(fileId);
+            }
+        };
+
+        async function fetchDownloads() {
+            try {
+                const response = await fetch('/api/downloads');
+                const data = await response.json();
+                updateNotificationUI(data.files);
+            } catch (error) {
+                console.error('Error fetching downloads:', error);
+            }
+        }
+
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Start polling for files
+        function startPolling() {
+            fetchDownloads(); // Initial fetch
+            pollInterval = setInterval(fetchDownloads, 3000); // Poll every 3 seconds
+        }
+
+        // Stop polling when page is hidden
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                }
+            } else {
+                if (!pollInterval) {
+                    startPolling();
+                }
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const container = document.querySelector('.notification-container');
+            const dropdown = document.getElementById('notificationDropdown');
+            const icon = document.getElementById('notificationIcon');
+            
+            // Don't close if clicking on the icon or inside the container
+            if (container && dropdown && !container.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+
+        // Start polling on page load
+        startPolling();
+
+
+        // Timer functionality
+        let timerInterval = null;
+        let timerSeconds = 170; // 2 minutes 50 seconds = 170 seconds
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            // Reset timer
+            timerSeconds = 170;
+            const startTime = Date.now();
+            
+            // Store timer start time in sessionStorage so it persists across page reloads
+            sessionStorage.setItem('timerStartTime', startTime.toString());
+            sessionStorage.setItem('timerActive', 'true');
+            
+            const timerContainer = document.getElementById('timerContainer');
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerMessage = document.getElementById('timerMessage');
+            
+            // Show timer
+            if (timerContainer) {
+                timerContainer.classList.add('active');
+                timerContainer.classList.remove('warning', 'danger');
+                // Scroll timer into view
+                timerContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                console.log('Timer started and displayed');
+            } else {
+                console.error('Timer container not found!');
+            }
+            if (timerDisplay) {
+                timerDisplay.textContent = formatTime(timerSeconds);
+            } else {
+                console.error('Timer display not found!');
+            }
+            if (timerMessage) {
+                timerMessage.textContent = 'Processing your report...';
+            } else {
+                console.error('Timer message not found!');
+            }
+            
+            // Clear any existing timer
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+            
+            // Start countdown
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                
+                if (timerSeconds < 0) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                    sessionStorage.removeItem('timerStartTime');
+                    sessionStorage.removeItem('timerActive');
+                    if (timerDisplay) {
+                        timerDisplay.textContent = '0:00';
+                    }
+                    if (timerMessage) {
+                        timerMessage.textContent = 'Report should be ready! Check notifications.';
+                    }
+                    if (timerContainer) {
+                        timerContainer.classList.add('danger');
+                    }
+                    return;
+                }
+                
+                if (timerDisplay) {
+                    timerDisplay.textContent = formatTime(timerSeconds);
+                }
+                
+                // Add warning style when less than 30 seconds
+                if (timerSeconds <= 30) {
+                    if (timerContainer) {
+                        timerContainer.classList.add('danger');
+                    }
+                    if (timerMessage) {
+                        timerMessage.textContent = 'Almost done!';
+                    }
+                } else if (timerSeconds <= 60) {
+                    if (timerContainer) {
+                        timerContainer.classList.add('warning');
+                    }
+                    if (timerMessage) {
+                        timerMessage.textContent = 'Processing...';
+                    }
+                }
+            }, 1000);
+        }
+
+        function restoreTimer() {
+            const timerStartTime = sessionStorage.getItem('timerStartTime');
+            const timerActive = sessionStorage.getItem('timerActive');
+            
+            if (timerActive === 'true' && timerStartTime) {
+                // Check if timer has expired (more than 170 seconds have passed)
+                const startTime = parseInt(timerStartTime, 10);
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                
+                // If more than 170 seconds have passed, clear the timer
+                if (elapsed >= 170) {
+                    sessionStorage.removeItem('timerStartTime');
+                    sessionStorage.removeItem('timerActive');
+                    return; // Don't restore the timer
+                }
+                
+                const remaining = 170 - elapsed;
+                
+                if (remaining > 0) {
+                    timerSeconds = remaining;
+                    const timerContainer = document.getElementById('timerContainer');
+                    const timerDisplay = document.getElementById('timerDisplay');
+                    const timerMessage = document.getElementById('timerMessage');
+                    
+                    // Show timer
+                    if (timerContainer) {
+                        timerContainer.classList.add('active');
+                        timerContainer.classList.remove('warning', 'danger');
+                        // Scroll timer into view
+                        timerContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        console.log('Timer restored from sessionStorage');
+                    }
+                    if (timerDisplay) {
+                        timerDisplay.textContent = formatTime(timerSeconds);
+                    }
+                    if (timerMessage) {
+                        timerMessage.textContent = 'Processing your report...';
+                    }
+                    
+                    // Update visual state based on remaining time
+                    if (timerSeconds <= 30) {
+                        if (timerContainer) {
+                            timerContainer.classList.add('danger');
+                        }
+                        if (timerMessage) {
+                            timerMessage.textContent = 'Almost done!';
+                        }
+                    } else if (timerSeconds <= 60) {
+                        if (timerContainer) {
+                            timerContainer.classList.add('warning');
+                        }
+                        if (timerMessage) {
+                            timerMessage.textContent = 'Processing...';
+                        }
+                    }
+                    
+                    // Clear any existing timer
+                    if (timerInterval) {
+                        clearInterval(timerInterval);
+                    }
+                    
+                    // Continue countdown
+                    timerInterval = setInterval(() => {
+                        timerSeconds--;
+                        
+                        if (timerSeconds < 0) {
+                            clearInterval(timerInterval);
+                            timerInterval = null;
+                            sessionStorage.removeItem('timerStartTime');
+                            sessionStorage.removeItem('timerActive');
+                            if (timerDisplay) {
+                                timerDisplay.textContent = '0:00';
+                            }
+                            if (timerMessage) {
+                                timerMessage.textContent = 'Report should be ready! Check notifications.';
+                            }
+                            if (timerContainer) {
+                                timerContainer.classList.add('danger');
+                            }
+                            return;
+                        }
+                        
+                        if (timerDisplay) {
+                            timerDisplay.textContent = formatTime(timerSeconds);
+                        }
+                        
+                        // Add warning style when less than 30 seconds
+                        if (timerSeconds <= 30) {
+                            if (timerContainer) {
+                                timerContainer.classList.add('danger');
+                            }
+                            if (timerMessage) {
+                                timerMessage.textContent = 'Almost done!';
+                            }
+                        } else if (timerSeconds <= 60) {
+                            if (timerContainer) {
+                                timerContainer.classList.add('warning');
+                            }
+                            if (timerMessage) {
+                                timerMessage.textContent = 'Processing...';
+                            }
+                        }
+                    }, 1000);
+                } else {
+                    // Timer already expired
+                    sessionStorage.removeItem('timerStartTime');
+                    sessionStorage.removeItem('timerActive');
+                }
+            }
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        async function cancelReportGeneration() {
+            // Stop the timer
+            stopTimer();
+            
+            // Clear session storage
+            sessionStorage.removeItem('timerStartTime');
+            sessionStorage.removeItem('timerActive');
+            
+            // Hide timer container
+            const timerContainer = document.getElementById('timerContainer');
+            if (timerContainer) {
+                timerContainer.classList.remove('active');
+            }
+            
+            // Call backend to cancel the process
+            try {
+                const response = await fetch('/api/cancel-generation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    // Show success message
+                    if (timerContainer) {
+                        const timerMessage = document.getElementById('timerMessage');
+                        if (timerMessage) {
+                            timerMessage.textContent = 'Report generation cancelled.';
+                        }
+                    }
+                    // Optionally show a flash message
+                    console.log('Report generation cancelled successfully');
+                } else {
+                    console.error('Failed to cancel report generation:', result.message);
+                }
+            } catch (error) {
+                console.error('Error cancelling report generation:', error);
+            }
+        }
+
+        // Start timer when form is submitted or button is clicked
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('reportForm');
+            const submitButton = form ? form.querySelector('button[type="submit"]') : null;
+            const cancelBtn = document.getElementById('timerCancelBtn');
+            
+            // Add event listener for cancel button
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', cancelReportGeneration);
+            }
+            
+            // Restore timer if page was reloaded (do this first)
+            restoreTimer();
+            
+            if (form) {
+                // Start timer when form is submitted (before page reload)
+                form.addEventListener('submit', function(e) {
+                    // Start timer and store in sessionStorage
+                    startTimer();
+                    // Small delay to ensure timer is visible before page reloads
+                    setTimeout(() => {
+                        // Form will submit normally
+                    }, 100);
+                });
+            }
+            
+            // Also start timer when button is clicked (shows immediately, before form submit)
+            if (submitButton) {
+                submitButton.addEventListener('click', function(e) {
+                    // Start timer immediately on button click
+                    // This ensures timer is visible even before form validation
+                    startTimer();
+                });
+            }
+        });
+
+        // Add click event listener to notification icon (wait for DOM)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupNotificationIcon);
+        } else {
+            setupNotificationIcon();
+        }
+
+        function setupNotificationIcon() {
+            const notificationIcon = document.getElementById('notificationIcon');
+            if (notificationIcon) {
+                notificationIcon.addEventListener('click', function(event) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    const dropdown = document.getElementById('notificationDropdown');
+                    if (dropdown) {
+                        const isShowing = dropdown.classList.contains('show');
+                        dropdown.classList.toggle('show');
+                        console.log('Notification dropdown toggled:', !isShowing ? 'shown' : 'hidden');
+                    } else {
+                        console.error('Notification dropdown element not found');
+                    }
+                });
+                console.log('Notification icon click handler attached');
+            } else {
+                console.error('Notification icon element not found');
+            }
+            
+            // Setup clear button
+            const clearBtn = document.getElementById('clearNotificationsBtn');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function(event) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    clearNotifications();
+                });
+                console.log('Clear button click handler attached');
+            }
+        }
+    </script>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+</head>
+<body>
+    <div class="notification-container">
+        <div class="notification-icon" id="notificationIcon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="notification-badge hidden" id="notificationBadge">0</span>
+        </div>
+        <div class="notification-dropdown" id="notificationDropdown">
+            <div class="notification-header">
+                <h3>Downloaded Files</h3>
+                <button class="notification-clear" id="clearNotificationsBtn">Clear</button>
+            </div>
+            <div class="notification-list" id="notificationList">
+                <div class="notification-empty">No files available</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page">
+        <header class="page__header">
+            <h1>Report Generator</h1>
+            <p class="page__subtitle">
+                Launch reports faster with guided auto-login and targeted search filters. Add the details you need—nothing more, nothing less.
+            </p>
+        </header>
+
+        <main class="page__body">
+            <div class="timer-container" id="timerContainer">
+                <div class="timer-label">Report will be ready in</div>
+                <div class="timer-display" id="timerDisplay">2:50</div>
+                <div class="timer-message" id="timerMessage">Processing your report...</div>
+                <button class="timer-cancel-btn" id="timerCancelBtn" type="button">Cancel Generation</button>
+            </div>
+
+            <section class="card" aria-label="Report generator launch form">
+                <form method="post" action="/open" enctype="multipart/form-data" id="reportForm">
+                    <div class="fields">
+                        <!-- Hidden input to always submit performance report type -->
+                        <input type="hidden" name="report_type" value="performance" />
+
+                        <div class="field">
+                            <label for="url">URL</label>
+                            <input id="url" name="url" type="text" placeholder="https://example.com" required aria-required="true" />
+                        </div>
+
+                        <div class="field">
+                            <label for="username">User ID</label>
+                            <input id="username" name="username" type="text" placeholder="your.email@example.com" />
+                        </div>
+
+                        <div class="field">
+                            <label for="password">Password</label>
+                            <input id="password" name="password" type="password" required aria-required="true" />
+                        </div>
+
+                        <div class="field">
+                            <label for="course">Course name to search</label>
+                            <input id="course" name="course" type="text" placeholder="TCS_CODEVITA_Course" />
+                        </div>
+
+                        <div class="field">
+                            <label for="module">Module name to search</label>
+                            <input id="module" name="module" type="text" placeholder="Week 1" />
+                        </div>
+
+                        <div class="field">
+                            <label for="test">Test name to search</label>
+                            <input id="test" name="test" type="text" placeholder="TCS_Test_01" />
+                        </div>
+
+                        <div class="field">
+                            <label>Download filename based on:</label>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="radio" name="filename_choice" value="course" checked />
+                                    <span>Course name</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="radio" name="filename_choice" value="test" />
+                                    <span>Test name</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit">
+                        <span class="button__icon" aria-hidden="true">&rarr;</span>
+                        <span>Open / Auto-Login</span>
+                    </button>
+                    <div>
+                        <small>
+                            If user and password are provided, the app will attempt to log in using common field selectors. You may need to keep the window in focus.
+                        </small>
+                    </div>
+                </form>
+            </section>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="status-stack" role="status" aria-live="polite">
+                        {% for category, message in messages %}
+                            <div class="status {{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+        </main>
+    </div>
+</body>
+</html>
+
+
