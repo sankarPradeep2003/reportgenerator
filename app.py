@@ -29,6 +29,70 @@ file_metadata: dict[str, dict] = {}
 # Active process tracking for cancellation
 active_processes: dict[str, dict] = {}
 
+# Flag to track if browser installation has been attempted
+_browser_install_attempted = False
+_browser_install_success = False
+
+
+def ensure_playwright_browsers_installed():
+    """Ensure Playwright browsers are installed. Runs automatically on app startup."""
+    global _browser_install_attempted, _browser_install_success
+    
+    # Only attempt once per app instance
+    if _browser_install_attempted:
+        return _browser_install_success
+    
+    _browser_install_attempted = True
+    
+    try:
+        print("INFO: Checking Playwright browser installation...")
+        
+        # Check if browsers are already installed
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
+            p_check = sync_playwright().start()
+            try:
+                chromium_path = p_check.chromium.executable_path
+                import os
+                if os.path.exists(chromium_path):
+                    print(f"INFO: Playwright browsers already installed at: {chromium_path}")
+                    _browser_install_success = True
+                    return True
+            finally:
+                p_check.stop()
+        except Exception:
+            pass
+        
+        # Browsers not found - install them
+        print("INFO: Playwright browsers not found. Installing automatically...")
+        print("INFO: This may take a few minutes on first startup...")
+        
+        import subprocess
+        result = subprocess.run(
+            ["python", "-m", "playwright", "install", "chromium", "--force"],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout for installation
+        )
+        
+        if result.returncode == 0:
+            print("INFO: ✅ Playwright browsers installed successfully!")
+            _browser_install_success = True
+            return True
+        else:
+            error_output = result.stderr or result.stdout
+            print(f"WARNING: Browser installation had issues: {error_output[:500]}")
+            # Don't fail completely - might still work
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("WARNING: Browser installation timed out. Will retry on first use.")
+        return False
+    except Exception as exc:
+        print(f"WARNING: Could not install browsers automatically: {exc}")
+        print("INFO: Browsers will be installed on first report generation request.")
+        return False
+
 
 def get_server_downloads_dir() -> Path:
     """Get the server-side downloads directory."""
@@ -1531,7 +1595,34 @@ def open_url():
     return redirect(url_for("index"))
 
 
+# Install browsers automatically when app starts (in background thread to not block startup)
+def _install_browsers_in_background():
+    """Install browsers in background thread so app can start immediately."""
+    import threading
+    def _install():
+        time.sleep(2)  # Wait 2 seconds for app to fully start
+        ensure_playwright_browsers_installed()
+    
+    thread = threading.Thread(target=_install, daemon=True)
+    thread.start()
+    return thread
+
+# Start browser installation in background when module loads
+_install_browsers_in_background()
+
+# Flask before_first_request equivalent - runs before first request
+@app.before_request
+def before_first_request():
+    """Ensure browsers are installed before handling requests."""
+    # This will only actually install if not already attempted
+    ensure_playwright_browsers_installed()
+
+
 if __name__ == "__main__":
+    # Also install browsers when running directly
+    print("INFO: Starting app and checking Playwright browsers...")
+    ensure_playwright_browsers_installed()
+    
     port = int(os.environ.get("PORT", 8000))
     host = os.environ.get("HOST", "0.0.0.0")
     debug = os.environ.get("FLASK_ENV") == "development"
