@@ -1386,7 +1386,10 @@ async def process_single_course_in_session(
 def index():
     """Home page - start browser installation in background when user visits."""
     # Start installing browsers in background when user visits
-    _install_browsers_in_background()
+    # Only start if not already installed and not already installing
+    if not _browser_install_success and not _browser_install_in_progress:
+        print("INFO: User visited homepage, starting browser installation in background...")
+        _install_browsers_in_background()
     return render_template("index.html", status=None)
 
 
@@ -1644,31 +1647,31 @@ def open_url():
         import asyncio
 
         # Ensure browsers are installed before starting
+        # Don't install synchronously here - it causes worker timeouts
+        # Browsers should be installed during build or in background thread
         if not _browser_install_success:
-            print("INFO: Browsers not ready, ensuring installation...")
-            # Try to install synchronously if not already installing
-            if not _browser_install_in_progress:
-                ensure_playwright_browsers_installed()
-            else:
-                # Wait a bit for installation to complete
-                max_wait = 300  # 5 minutes max wait
+            print("INFO: Browsers not ready...")
+            
+            # If installation is in progress, wait for it (but not too long to avoid timeout)
+            if _browser_install_in_progress:
+                print("INFO: Installation in progress, waiting up to 2 minutes...")
+                max_wait = 120  # 2 minutes max wait (to avoid worker timeout)
                 waited = 0
                 while _browser_install_in_progress and waited < max_wait:
                     time.sleep(5)
                     waited += 5
                     if _browser_install_success:
+                        print("INFO: Installation completed while waiting!")
                         break
-        
-        # Check one more time
-        if not _browser_install_success:
-            # Try one more synchronous install attempt
-            print("INFO: Final attempt to install browsers...")
-            ensure_playwright_browsers_installed()
-        
-        # If still not installed, show error to user
-        if not _browser_install_success:
-            flash("Browsers are still installing. Please wait a moment and try again. This may take 2-5 minutes on first use.", category="error")
-            return redirect(url_for("index"))
+                    if waited % 30 == 0:  # Log every 30 seconds
+                        print(f"INFO: Still waiting for installation... ({waited}s)")
+            
+            # If still not installed, don't try synchronous install (causes timeout)
+            # Just inform user and let background installation continue
+            if not _browser_install_success:
+                print("WARNING: Browsers not ready yet. Background installation may still be in progress.")
+                flash("Browsers are still installing in the background. Please wait 2-5 minutes and try again. The installation happens automatically when you visit the page.", category="error")
+                return redirect(url_for("index"))
 
         process_id = str(uuid.uuid4())
         
