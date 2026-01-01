@@ -3,7 +3,7 @@ services:
     name: reportgenerator
     env: python
     buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: python app.py
+    startCommand: gunicorn app:app
     envVars:
       - key: FLASK_SECRET
         generateValue: true

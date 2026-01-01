@@ -17,7 +17,7 @@
    - Connect your GitHub repo
    - Use these settings:
      - **Build Command**: `chmod +x build.sh && ./build.sh`
-     - **Start Command**: `python app.py`
+     - **Start Command**: `gunicorn app:app`
      - **Environment Variables**:
        - `FLASK_SECRET`: Generate (click Generate button)
        - `FLASK_ENV`: `production`

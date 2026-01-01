@@ -74,9 +74,9 @@ Fill in the following settings:
   chmod +x build.sh && ./build.sh
   ```
 - **Start Command**: 
-  ```bash
-  python app.py
-  ```
+   ```bash
+   gunicorn app:app
+   ```
 
 #### Environment Variables:
 Click "Add Environment Variable" and add:
@@ -145,6 +145,7 @@ Click "Add Environment Variable" and add:
 - Playwright browsers are installed during the build process
 - The build script (`build.sh`) handles this automatically
 - First build may take longer due to browser downloads
+- **Note**: Playwright requires Node.js >=18, which Render automatically provides
 
 ### Environment Variables:
 - `FLASK_SECRET`: Used for Flask session security (auto-generated)

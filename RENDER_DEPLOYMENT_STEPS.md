@@ -73,7 +73,7 @@ Fill in these exact values:
   ```
 - **Start Command**: 
   ```
-  python app.py
+  gunicorn app:app
   ```
 
 #### **Environment Variables:**
