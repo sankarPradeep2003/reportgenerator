@@ -91,6 +91,11 @@ Click "Add Environment Variable" and add:
 3. **PYTHON_VERSION** (optional):
    - Value: `3.11.0`
 
+4. **HEADLESS** (optional but recommended):
+   - Value: `true`
+   - This ensures Playwright runs in headless mode on the server
+   - The app will auto-detect, but this makes it explicit
+
 #### Advanced Settings (Optional):
 - **Auto-Deploy**: `Yes` (deploys automatically on git push)
 - **Health Check Path**: `/` (your root URL)

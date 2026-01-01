@@ -89,6 +89,10 @@ Click "Add Environment Variable" for each:
 3. **PYTHON_VERSION** (optional)
    - Value: `3.11.0`
 
+4. **HEADLESS** (recommended)
+   - Value: `true`
+   - Ensures Playwright runs in headless mode on Render
+
 #### **Advanced Settings:**
 - **Auto-Deploy**: `Yes` ✅
 - **Health Check Path**: `/`

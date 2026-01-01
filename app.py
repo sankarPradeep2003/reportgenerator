@@ -473,18 +473,57 @@ async def open_and_login_with_playwright(
     batch: str = "",
 ) -> tuple[bool, str]:
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import async_playwright  # type: ignore[reportMissingImports]
     except Exception as exc:  # noqa: BLE001
         return False, f"Playwright not installed: {exc}"
 
     try:
         async with async_playwright() as p:
+            # Determine if we should run in headless mode
+            # On Render/cloud servers, there's no display, so we must use headless mode
+            # Check for explicit HEADLESS env var, or detect server environment
+            explicit_headless = os.environ.get("HEADLESS", "").lower() == "true"
+            
+            # Detect if we're on a server (headless environment)
+            # Windows/Mac should use visible browser unless explicitly set to headless
+            system = platform.system()
+            is_server = False
+            
+            if explicit_headless:
+                # Explicitly requested headless mode
+                is_server = True
+            elif os.environ.get("RENDER") is not None:
+                # Render.com environment
+                is_server = True
+            elif system == "Linux" and os.environ.get("DISPLAY") is None:
+                # Linux server without X11 display
+                is_server = True
+            # Windows and macOS should use visible browser by default
+            # (DISPLAY check doesn't apply to Windows/Mac)
+            
+            is_headless = is_server
+            
             # Prefer the user's installed Google Chrome; fallback to bundled Chromium
             browser = None
-            try:
-                browser = await p.chromium.launch(channel="chrome", headless=False)
-            except Exception:
-                browser = await p.chromium.launch(headless=False)
+            launch_options = {"headless": is_headless}
+            
+            # On headless servers, use bundled Chromium (system Chrome may not be available)
+            if not is_headless:
+                # Try to use system Chrome first (visible browser)
+                try:
+                    browser = await p.chromium.launch(channel="chrome", **launch_options)
+                except Exception as chrome_exc:
+                    # Fallback to bundled Chromium if system Chrome not available
+                    try:
+                        browser = await p.chromium.launch(**launch_options)
+                    except Exception as chromium_exc:
+                        return False, f"Failed to launch browser: {chromium_exc}. Chrome/Chromium not found or not accessible."
+            else:
+                # On headless servers, use bundled Chromium
+                try:
+                    browser = await p.chromium.launch(**launch_options)
+                except Exception as headless_exc:
+                    return False, f"Failed to launch headless browser: {headless_exc}. Make sure Playwright browsers are installed."
             
             # Store browser reference for cancellation
             if process_id and process_id in active_processes:
