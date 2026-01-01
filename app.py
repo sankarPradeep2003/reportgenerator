@@ -36,35 +36,49 @@ _browser_install_success = False
 
 
 def ensure_playwright_browsers_installed():
-    """Ensure Playwright browsers are installed. Runs automatically on app startup."""
-    global _browser_install_attempted, _browser_install_success
+    """Ensure Playwright browsers are installed. Runs automatically when user visits."""
+    global _browser_install_attempted, _browser_install_success, _browser_install_in_progress
     
-    # Only attempt once per app instance
-    if _browser_install_attempted:
-        return _browser_install_success
+    # If already successfully installed, return immediately
+    if _browser_install_success:
+        return True
     
+    # If installation is in progress, don't start another one
+    if _browser_install_in_progress:
+        return False  # Still installing
+    
+    # Allow retries if previous attempt failed
+    # Only skip if we're currently installing
     _browser_install_attempted = True
     
     try:
         print("INFO: Checking Playwright browser installation...")
         
-        # Check if Chrome is already installed
+        # Check if browsers are already installed (try Chrome first, then Chromium)
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
             p_check = sync_playwright().start()
             try:
-                # Try to launch Chrome in headless mode to verify it exists
-                browser = p_check.chromium.launch(channel="chrome", headless=True)
-                browser.close()
+                # Try Chrome first, then Chromium
+                try:
+                    browser = p_check.chromium.launch(channel="chrome", headless=True)
+                    browser.close()
+                    print("INFO: Chrome already installed and working!")
+                except Exception:
+                    # Chrome not available, try Chromium
+                    browser = p_check.chromium.launch(headless=True)
+                    browser.close()
+                    print("INFO: Chromium already installed and working!")
+                
                 chromium_path = p_check.chromium.executable_path
                 import os
                 if os.path.exists(chromium_path):
-                    print(f"INFO: Chrome already installed at: {chromium_path}")
+                    print(f"INFO: Browser already installed at: {chromium_path}")
                     _browser_install_success = True
                     return True
             except Exception as check_exc:
-                # Chrome launch failed, Chrome not installed
-                print(f"DEBUG: Chrome check failed (Chrome not installed): {check_exc}")
+                # Browser launch failed, browsers not installed
+                print(f"DEBUG: Browser check failed (browsers not installed): {check_exc}")
             finally:
                 p_check.stop()
         except Exception:
@@ -75,14 +89,26 @@ def ensure_playwright_browsers_installed():
         print("INFO: This may take a few minutes on first startup...")
         
         import subprocess
-        # Install Chrome only (user requirement)
-        print("INFO: Installing Chrome browser...")
+        # Try to install Chrome first (user preference)
+        # On Linux servers, Chrome may not be available, so we'll fall back to Chromium
+        print("INFO: Attempting to install Chrome browser...")
         result = subprocess.run(
             ["python", "-m", "playwright", "install", "chrome", "--force"],
             capture_output=True,
             text=True,
             timeout=600  # 10 minute timeout
         )
+        
+        # If Chrome install fails (common on Linux servers), fall back to Chromium headless shell
+        if result.returncode != 0:
+            print("INFO: Chrome installation failed (common on Linux servers).")
+            print("INFO: Falling back to Chromium headless shell (required for headless mode)...")
+            result = subprocess.run(
+                ["python", "-m", "playwright", "install", "chromium-headless-shell", "--force"],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
         
         if result.returncode == 0:
             # Verify Chrome actually works
@@ -97,9 +123,10 @@ def ensure_playwright_browsers_installed():
                     _browser_install_success = True
                     return True
                 except Exception as verify_exc:
-                    print(f"WARNING: Installation succeeded but Chrome doesn't work: {verify_exc}")
+                    print(f"WARNING: Installation succeeded but browser doesn't work: {verify_exc}")
                     print("INFO: Will retry installation on next request...")
                     _browser_install_success = False  # Reset so it tries again
+                    _browser_install_attempted = False  # Reset flag to allow retry
                     return False
                 finally:
                     p_verify.stop()
@@ -113,14 +140,21 @@ def ensure_playwright_browsers_installed():
             error_output = result.stderr or result.stdout
             print(f"ERROR: Chrome installation failed: {error_output[:500]}")
             print("ERROR: Chrome is required. Please ensure Chrome can be installed on this system.")
+            # Reset flag so it can retry
+            _browser_install_attempted = False
             return False
             
     except subprocess.TimeoutExpired:
-        print("WARNING: Browser installation timed out. Will retry on first use.")
+        print("ERROR: Browser installation timed out after 10 minutes.")
+        print("INFO: Installation will be retried automatically on next page visit.")
+        _browser_install_attempted = False  # Reset so it can retry
         return False
     except Exception as exc:
-        print(f"WARNING: Could not install browsers automatically: {exc}")
-        print("INFO: Browsers will be installed on first report generation request.")
+        print(f"ERROR: Could not install browsers automatically: {exc}")
+        import traceback
+        traceback.print_exc()
+        print("INFO: Installation will be retried automatically on next page visit.")
+        _browser_install_attempted = False  # Reset so it can retry
         return False
 
 
@@ -631,17 +665,26 @@ async def open_and_login_with_playwright(
                         print(f"ERROR: {error_msg}")  # Debug output
                         return False, error_msg
             else:
-                # On headless servers, use Chrome only
+                # On headless servers, try Chrome first, fall back to Chromium
                 try:
-                    print("DEBUG: Launching Chrome in headless mode...")
-                    browser = await p.chromium.launch(
-                        channel="chrome",
-                        headless=True,
-                        args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for some Linux servers
-                    )
-                    print("DEBUG: Chrome launched successfully in headless mode!")
+                    print("DEBUG: Attempting to launch Chrome in headless mode...")
+                    try:
+                        browser = await p.chromium.launch(
+                            channel="chrome",
+                            headless=True,
+                            args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for some Linux servers
+                        )
+                        print("DEBUG: Chrome launched successfully in headless mode!")
+                    except Exception:
+                        # Chrome not available, use Chromium
+                        print("DEBUG: Chrome not available, using Chromium...")
+                        browser = await p.chromium.launch(
+                            headless=True,
+                            args=['--no-sandbox', '--disable-setuid-sandbox']  # Required for some Linux servers
+                        )
+                        print("DEBUG: Chromium launched successfully in headless mode!")
                 except Exception as headless_exc:
-                    error_msg = f"Failed to launch Chrome: {headless_exc}. Chrome is required. Please ensure Chrome is installed via 'python -m playwright install chrome'."
+                    error_msg = f"Failed to launch browser: {headless_exc}. Please ensure browsers are installed via 'python -m playwright install chrome' or 'python -m playwright install chromium-headless-shell'."
                     print(f"ERROR: {error_msg}")  # Debug output
                     return False, error_msg
             
@@ -1690,26 +1733,42 @@ _browser_install_thread = None
 
 def _install_browsers_in_background():
     """Install browsers in background thread - called when user visits the site."""
-    global _browser_install_in_progress, _browser_install_thread
+    global _browser_install_in_progress, _browser_install_thread, _browser_install_attempted
+    
+    # If already successfully installed, don't do anything
+    if _browser_install_success:
+        return
     
     # Don't start multiple installations
-    if _browser_install_in_progress or _browser_install_success:
+    if _browser_install_in_progress:
         return
     
     if _browser_install_thread and _browser_install_thread.is_alive():
         return  # Already installing
     
+    # Reset attempt flag so we can try again
+    _browser_install_attempted = False
     _browser_install_in_progress = True
     
     def _install():
-        global _browser_install_in_progress
+        global _browser_install_in_progress, _browser_install_success
         try:
-            ensure_playwright_browsers_installed()
+            print("INFO: Starting automatic browser installation in background...")
+            result = ensure_playwright_browsers_installed()
+            if result:
+                print("INFO: ✅ Background installation completed successfully!")
+            else:
+                print("INFO: ⚠️ Background installation did not complete successfully")
+        except Exception as exc:
+            print(f"ERROR: Background installation failed: {exc}")
+            import traceback
+            traceback.print_exc()
         finally:
             _browser_install_in_progress = False
     
     _browser_install_thread = threading.Thread(target=_install, daemon=True)
     _browser_install_thread.start()
+    print("INFO: Browser installation thread started in background")
     return _browser_install_thread
 
 
